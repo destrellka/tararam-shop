@@ -12,7 +12,7 @@ const PAGE = 40;
 const MAX_DATA = 4096; // столько байт Telegram пропускает от витрины к боту
 
 const S = {
-  shop: {}, delivery: {}, folders: {}, products: {}, order: [], out: new Set(),
+  shop: {}, delivery: {}, folders: {}, products: {}, order: [], out: new Set(), left: {},
   cart: {}, fav: [], profile: {}, route: { v: 'home' }, stack: [], sheet: null,
 };
 
@@ -47,8 +47,17 @@ function unitPrice(p, q) {
   for (const [from, pr] of p.t) if (q >= from) price = pr;
   return price;
 }
-const nextTier = (p, q) => p.t.find(([from]) => from > q);
+const nextTier = (p, q) => p.t.find(([from]) => from > q && from <= maxQty(p));   // скидку, на которую не хватит склада, не предлагаем
 const orderable = p => p && !S.out.has(p.i);
+// Сколько штук есть на складе (undefined — остаток неизвестен, не ограничиваем)
+const leftOf = p => (p && S.left[p.i] != null ? S.left[p.i] : undefined);
+const maxQty = p => Math.min(100000, leftOf(p) ?? 100000);
+const LOW = 20;   // «осталось N шт» в списке показываем, когда товара мало
+function capQ(p, q) {
+  const m = maxQty(p);
+  if (q > m) { toast(`На складе только ${m} шт`); haptic('error'); return m; }
+  return q;
+}
 
 // ---------- Поиск (как в боте: «ведро 3 литра» найдёт «Ведро 3л») ----------
 const UNITS = {
@@ -100,6 +109,7 @@ function prepare(data, avail) {
   S.shop = data.shop || {};
   S.delivery = data.delivery || {};
   S.out = new Set((avail && avail.out) || []);
+  S.left = (avail && avail.left) || {};
   const F = {};
   for (const [id, [title, parent, kids]] of Object.entries(data.folders)) {
     const m = title.match(EMOJI);
@@ -154,7 +164,7 @@ function cartLines() {
 function setQty(id, q, silent) {
   const p = S.products[id];
   if (!p) return;
-  q = Math.max(0, Math.min(100000, Math.floor(q) || 0));
+  q = Math.max(0, Math.min(maxQty(p), Math.floor(q) || 0));
   if (q && q < minQty(p)) q = 0;
   const had = cartQty(id);
   if (q) S.cart[id] = q; else delete S.cart[id];
@@ -193,6 +203,7 @@ function row(p) {
       <div class="pname">${esc(p.n)}</div>
       <div class="pprice">${money(mp)}${mq > 1 ? `<span class="min">от ${mq} шт</span>` : ''}</div>
       ${p.t.length > 1 ? `<span class="opt">от ${last[0]} шт — ${money(last[1])}</span>` : ''}
+      ${orderable(p) && leftOf(p) != null && leftOf(p) <= LOW ? `<span class="low">осталось ${leftOf(p)} шт</span>` : ''}
     </div>
     <div class="ctl">${ctl(p)}</div>
   </div>`;
@@ -283,11 +294,13 @@ const VIEWS = {
     <div class="card">${lines.map(({ p, q, price, sum }) => {
       const nx = nextTier(p, q);
       const gone = !orderable(p);
+      const over = !gone && leftOf(p) != null && q > leftOf(p);
       return `<div class="line" data-id="${p.i}">
         <div data-act="open">${thumb(p)}</div>
         <div>
           <div class="nm" data-act="open">${esc(p.n)}</div>
           ${gone ? '<div class="warn">Сейчас нет в наличии — уберите из корзины</div>' : ''}
+          ${over ? `<div class="warn">На складе только ${leftOf(p)} шт — уменьшите количество</div>` : ''}
           <div class="row"><div class="ctl">${ctl(p).replace('<span class="na">нет в наличии</span>', '<button class="linkbtn danger" data-act="del">Убрать</button>')}</div>
             <div class="sum"><b>${money(sum)}</b><small>${q} × ${money(price)}</small></div></div>
           ${nx && !gone ? `<div class="hint">💡 Ещё ${nx[0] - q} шт — и цена ${money(nx[1])}/шт</div>` : ''}
@@ -449,6 +462,7 @@ function drawSheet() {
     <div class="hero-ph" style="--h:${p.hue}">${p.ph ? `<img src="${esc(p.ph)}" alt="" onerror="this.outerHTML='${p.emoji}'">` : p.emoji}</div>
     <h2>${esc(p.n)}</h2>
     <div class="where">${esc(path)} · код ${esc(p.i)}</div>
+    ${ok && leftOf(p) != null ? `<div class="stock">✅ На складе: ${leftOf(p)} шт</div>` : ''}
     ${p.d ? `<p class="desc">${esc(p.d)}</p>` : ''}
     <div class="tiers" id="stiers">${p.t.map(([from, pr]) => `<div class="tier"><small>${from === 1 ? 'за 1 шт' : `от ${from} шт`}</small><b>${money(pr)}</b></div>`).join('')}</div>
     ${ok ? `
@@ -466,7 +480,7 @@ function drawSheet() {
     inp.addEventListener('input', () => {
       inp.value = inp.value.replace(/\D/g, '');
       const v = parseInt(inp.value, 10);
-      if (v > 0) { S.sheet.q = Math.min(v, 100000); drawSheetDyn(false); }
+      if (v > 0) { S.sheet.q = Math.min(v, maxQty(S.products[S.sheet.id])); if (v > S.sheet.q) { inp.value = S.sheet.q; toast(`На складе только ${S.sheet.q} шт`); } drawSheetDyn(false); }
     });
     inp.addEventListener('blur', () => { inp.value = S.sheet.q; });
   }
@@ -517,6 +531,8 @@ function submit() {
   const { lines, total } = cartLines();
   const gone = lines.filter(l => !orderable(l.p));
   if (gone.length) { toast('Уберите из корзины то, чего нет в наличии'); go({ v: 'cart' }, false); return; }
+  const over = lines.filter(l => leftOf(l.p) != null && l.q > leftOf(l.p));
+  if (over.length) { toast('Столько нет на складе — поправьте количество в корзине'); go({ v: 'cart' }, false); return; }
   const payload = JSON.stringify({ v: 1, i: lines.map(l => [l.p.i, l.q]), n, p, d: mode, a, c, t: total });
   if (new TextEncoder().encode(payload).length > MAX_DATA) {
     toast('Слишком большой заказ для одного раза. Разделите его на два или сократите комментарий.');
@@ -589,7 +605,7 @@ document.addEventListener('click', e => {
   const sp = S.sheet && S.products[S.sheet.id];
   switch (act) {
     case 'open': if (id) openSheet(id); break;
-    case 'inc': if (p) setQty(id, cartQty(id) ? cartQty(id) + 1 : minQty(p)); if (p && cartQty(id) === minQty(p) && minQty(p) > 1) toast(`Этот товар продаётся от ${minQty(p)} шт`); break;
+    case 'inc': if (p) setQty(id, capQ(p, cartQty(id) ? cartQty(id) + 1 : minQty(p))); if (p && cartQty(id) === minQty(p) && minQty(p) > 1) toast(`Этот товар продаётся от ${minQty(p)} шт`); break;
     case 'dec': if (p) setQty(id, cartQty(id) - 1 < minQty(p) ? 0 : cartQty(id) - 1); break;
     case 'del': if (p) setQty(id, 0); break;
     case 'clear':
@@ -597,11 +613,11 @@ document.addEventListener('click', e => {
       else if (confirm('Очистить корзину?')) { S.cart = {}; store.set('cart', '{}'); render(); }
       break;
     case 'close': closeSheet(); break;
-    case 'sinc': S.sheet.q = Math.min(100000, S.sheet.q + 1); haptic('select'); drawSheetDyn(); break;
+    case 'sinc': S.sheet.q = capQ(sp, S.sheet.q + 1); haptic('select'); drawSheetDyn(); break;
     case 'sdec': S.sheet.q = Math.max(minQty(sp), S.sheet.q - 1); haptic('select'); drawSheetDyn(); break;
-    case 'sadd': S.sheet.q = Math.min(100000, S.sheet.q + Number(el.dataset.n)); haptic('select'); drawSheetDyn(); break;
+    case 'sadd': S.sheet.q = capQ(sp, S.sheet.q + Number(el.dataset.n)); haptic('select'); drawSheetDyn(); break;
     case 'sput': {
-      const q = Math.max(minQty(sp), S.sheet.q);
+      const q = Math.min(maxQty(sp), Math.max(minQty(sp), S.sheet.q));
       const had = cartQty(sp.i);
       setQty(sp.i, q);
       toast(had ? `Корзина обновлена: ${q} шт` : `✅ Добавлено: ${q} шт`);
@@ -662,12 +678,18 @@ async function start() {
     let v = '';
     try { v = (await getJson('version.json?t=' + Date.now())).v || ''; } catch (e) { /* без версии тоже работаем */ }
     const [data, avail, cart, fav, profile] = await Promise.all([
-      getJson('data.json?v=' + v), getJson('avail.json?v=' + v).catch(() => ({ out: [] })),
+      getJson('data.json?v=' + v), getJson('avail.json?v=' + v).catch(() => ({ out: [], left: {} })),
       store.get('cart'), store.get('fav'), store.get('profile'),
     ]);
     prepare(data, avail);
     S.cart = {};
-    for (const [id, q] of Object.entries(parse(cart, {}))) if (S.products[id] && q > 0) S.cart[id] = q;
+    let cut = 0;
+    for (const [id, q] of Object.entries(parse(cart, {}))) {
+      if (!S.products[id] || !(q > 0)) continue;
+      const m = maxQty(S.products[id]);
+      S.cart[id] = q > m && m >= minQty(S.products[id]) ? (cut++, m) : q;
+    }
+    if (cut) { store.set('cart', JSON.stringify(S.cart)); setTimeout(() => toast('Часть товаров закончилась на складе — количество в корзине уменьшено'), 400); }
     S.fav = parse(fav, []).filter(id => S.products[id]);
     S.profile = parse(profile, {});
     render();
