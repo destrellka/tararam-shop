@@ -52,10 +52,12 @@ const orderable = p => p && !S.out.has(p.i);
 // Сколько штук есть на складе (undefined — остаток неизвестен, не ограничиваем)
 const leftOf = p => (p && S.left[p.i] != null ? S.left[p.i] : undefined);
 const maxQty = p => Math.min(100000, leftOf(p) ?? 100000);
-const LOW = 20;   // «осталось N шт» в списке показываем, когда товара мало
+const LOW = 50;   // больше этого — остаток зелёным, меньше — оранжевым
+const leftTag = p => (orderable(p) && leftOf(p) != null
+  ? `<span class="low${leftOf(p) > LOW ? ' many' : ''}">${leftOf(p) > LOW ? 'в наличии' : 'осталось'} ${leftOf(p)} ${un(p)}</span>` : '');
 function capQ(p, q) {
   const m = maxQty(p);
-  if (q > m) { toast(`На складе только ${m} шт`); haptic('error'); return m; }
+  if (q > m) { toast(`На складе только ${m} ${un(p)}`); haptic('error'); return m; }
   return q;
 }
 
@@ -100,7 +102,7 @@ function search(text) {
   if (/^\d{5}$/.test(text) && S.products[text]) return [S.products[text]];
   const q = tokens(text);
   if (!q[0].length && !q[1].length) return [];
-  return S.order.filter(p => orderable(p) && matches(q, p));
+  return collapse(S.order.filter(p => orderable(p) && matches(q, p)));
 }
 
 // ---------- Каталог ----------
@@ -128,16 +130,44 @@ function prepare(data, avail) {
     F[f].own.push(p);
   }
   S.folders = F;
+  for (const f of Object.values(F)) groupVariants(f.own);
   count('f');
 }
+
+// ---------- Фасовки: «Крышка 330 мл 10 шт» + «Крышка 330мл 50 шт» = одна карточка ----------
+const PACK = /[\s,]*\(?(\d+)\s*(шт|штук|листов|лист|пар|уп|рулонов|рулона)\.?\)?\s*$/i;
+function packOf(name) {
+  const m = name.match(PACK);
+  const base = (m ? name.slice(0, m.index) : name).replace(/[\s,]+$/, '');
+  const key = base.toLowerCase().replace(/ё/g, 'е').replace(/(\d)\s+(?=[a-zа-я])/g, '$1').replace(/[\s,.]+/g, ' ').trim();
+  return { key, base, n: m ? +m[1] : 1, unit: m ? m[2].toLowerCase() : 'шт' };
+}
+function groupVariants(items) {
+  const by = {};
+  for (const p of items) { const k = packOf(p.n); p._pk = k; (by[k.key] = by[k.key] || []).push(p); }
+  for (const vs of Object.values(by)) {
+    if (vs.length < 2 || new Set(vs.map(p => p._pk.n)).size < vs.length) continue;  // одинаковые фасовки не склеиваем
+    vs.sort((a, b) => a._pk.n - b._pk.n);
+    const g = { name: vs[0]._pk.base, items: vs };
+    for (const p of vs) { p.g = g; p.pack = `${p._pk.n} ${p._pk.unit}`; }
+  }
+}
+// Список товаров -> список карточек: из каждой группы фасовок одна карточка
+function collapse(items) {
+  const seen = new Set();
+  return items.filter(p => !p.g || (!seen.has(p.g) && seen.add(p.g)));
+}
+const variants = p => (p.g ? p.g.items.filter(orderable) : [p]);
+const multi = p => variants(p).length > 1;
+const un = p => (p && p.g && p._pk.n > 1 ? 'уп.' : 'шт');   // фасовку «50 шт» считаем упаковками
 function count(fid) {
   const f = S.folders[fid];
-  f.n = f.own.filter(orderable).length + f.kids.reduce((s, k) => s + (S.folders[k] ? count(k) : 0), 0);
+  f.n = collapse(f.own.filter(orderable)).length + f.kids.reduce((s, k) => s + (S.folders[k] ? count(k) : 0), 0);
   return f.n;
 }
 function allIn(fid, out = []) {
   const f = S.folders[fid];
-  for (const p of f.own) if (orderable(p)) out.push(p);
+  for (const p of collapse(f.own.filter(orderable))) out.push(p);
   for (const k of f.kids) if (S.folders[k]) allIn(k, out);
   return out;
 }
@@ -195,6 +225,7 @@ function ctl(p) {
   return `<div class="step"><button data-act="dec" aria-label="Меньше">−</button><button class="q" data-act="open">${q}</button><button data-act="inc" aria-label="Больше">+</button></div>`;
 }
 function row(p) {
+  if (multi(p)) return groupRow(p);
   const [mq, mp] = p.t[0];
   const last = p.t[p.t.length - 1];
   return `<div class="prod" data-id="${p.i}">
@@ -203,13 +234,30 @@ function row(p) {
       <div class="pname">${esc(p.n)}</div>
       <div class="pprice">${money(mp)}${mq > 1 ? `<span class="min">от ${mq} шт</span>` : ''}</div>
       ${p.t.length > 1 ? `<span class="opt">от ${last[0]} шт — ${money(last[1])}</span>` : ''}
-      ${orderable(p) && leftOf(p) != null && leftOf(p) <= LOW ? `<span class="low">осталось ${leftOf(p)} шт</span>` : ''}
+      ${leftTag(p)}
     </div>
     <div class="ctl">${ctl(p)}</div>
   </div>`;
 }
+function groupRow(p) {
+  const vs = variants(p);
+  const inCart = vs.filter(v => cartQty(v.i)).length;
+  const from = Math.min(...vs.map(v => v.t[0][1]));
+  return `<div class="prod" data-id="${p.i}">
+    <div data-act="open">${thumb(p)}</div>
+    <div class="pinfo" data-act="open">
+      <div class="pname">${esc(p.g.name)}</div>
+      <div class="pprice">от ${money(from)}</div>
+      <div class="packs">${vs.map(v => `<span>${esc(v.pack)}${leftOf(v) != null ? ` · <b class="${leftOf(v) > LOW ? 'many' : 'few'}">${leftOf(v)} ${un(v)}</b>` : ''}</span>`).join('')}</div>
+    </div>
+    <div class="ctl"><button class="add${inCart ? ' in' : ''}" data-act="open" aria-label="Выбрать фасовку">${inCart ? '✓' : '+'}</button></div>
+  </div>`;
+}
 function refreshControls(id) {
-  document.querySelectorAll(`.prod[data-id="${id}"] .ctl`).forEach(el => { el.innerHTML = ctl(S.products[id]); });
+  const p0 = S.products[id];
+  for (const v of p0 && p0.g ? p0.g.items : [p0]) {
+    if (v) document.querySelectorAll(`.prod[data-id="${v.i}"]`).forEach(el => { el.outerHTML = row(v); });
+  }
   if (S.route.v === 'cart') render(true);
   if (S.sheet && S.sheet.id === id) drawSheetDyn();
 }
@@ -460,11 +508,12 @@ function drawSheet() {
   $('#sheetbody').innerHTML = `
     <div class="grip"></div>
     <div class="hero-ph" style="--h:${p.hue}">${p.ph ? `<img src="${esc(p.ph)}" alt="" onerror="this.outerHTML='${p.emoji}'">` : p.emoji}</div>
-    <h2>${esc(p.n)}</h2>
+    <h2>${esc(multi(p) ? p.g.name : p.n)}</h2>
+    ${multi(p) ? `<div class="vars"><small>Фасовка</small><div>${variants(p).map(v => `<button class="var${v.i === p.i ? ' on' : ''}" data-act="variant" data-v="${v.i}">${esc(v.pack)}${cartQty(v.i) ? ' ✓' : ''}</button>`).join('')}</div></div>` : ''}
     <div class="where">${esc(path)} · код ${esc(p.i)}</div>
-    ${ok && leftOf(p) != null ? `<div class="stock">✅ На складе: ${leftOf(p)} шт</div>` : ''}
+    ${ok && leftOf(p) != null ? `<div class="stock">✅ На складе: ${leftOf(p)} ${un(p)}</div>` : ''}
     ${p.d ? `<p class="desc">${esc(p.d)}</p>` : ''}
-    <div class="tiers" id="stiers">${p.t.map(([from, pr]) => `<div class="tier"><small>${from === 1 ? 'за 1 шт' : `от ${from} шт`}</small><b>${money(pr)}</b></div>`).join('')}</div>
+    <div class="tiers" id="stiers">${p.t.map(([from, pr]) => `<div class="tier"><small>${from === 1 ? `за 1 ${un(p)}` : `от ${from} ${un(p)}`}</small><b>${money(pr)}</b></div>`).join('')}</div>
     ${ok ? `
     <div class="qrow">
       <div class="qbox"><button data-act="sdec" aria-label="Меньше">−</button>
@@ -480,7 +529,7 @@ function drawSheet() {
     inp.addEventListener('input', () => {
       inp.value = inp.value.replace(/\D/g, '');
       const v = parseInt(inp.value, 10);
-      if (v > 0) { S.sheet.q = Math.min(v, maxQty(S.products[S.sheet.id])); if (v > S.sheet.q) { inp.value = S.sheet.q; toast(`На складе только ${S.sheet.q} шт`); } drawSheetDyn(false); }
+      if (v > 0) { S.sheet.q = Math.min(v, maxQty(S.products[S.sheet.id])); if (v > S.sheet.q) { inp.value = S.sheet.q; toast(`На складе только ${S.sheet.q} ${un(S.products[S.sheet.id])}`); } drawSheetDyn(false); }
     });
     inp.addEventListener('blur', () => { inp.value = S.sheet.q; });
   }
@@ -504,7 +553,7 @@ function drawSheetDyn(syncInput = true) {
   const nx = nextTier(p, q);
   box.innerHTML = `
     ${price == null ? `<div class="warn">Этот товар продаётся от ${minQty(p)} шт.</div>`
-    : `<div class="calc"><span>${q} шт × ${money(price)}</span><b>${money(price * q)}</b></div>`}
+    : `<div class="calc"><span>${q} ${un(p)} × ${money(price)}</span><b>${money(price * q)}</b></div>`}
     ${nx && price != null ? `<div class="tip">💡 Возьмите ещё ${nx[0] - q} шт — будет по ${money(nx[1])} за штуку</div>` : ''}
     <button class="big-btn" data-act="sput" ${price == null ? 'disabled' : ''}>${inCart ? (inCart === q ? '✓ Уже в корзине' : 'Обновить корзину') : 'Добавить в корзину'}</button>
     ${inCart ? '<button class="linkbtn danger" data-act="sdel" style="width:100%;margin-top:6px">Убрать из корзины</button>' : ''}`;
@@ -620,11 +669,16 @@ document.addEventListener('click', e => {
       const q = Math.min(maxQty(sp), Math.max(minQty(sp), S.sheet.q));
       const had = cartQty(sp.i);
       setQty(sp.i, q);
-      toast(had ? `Корзина обновлена: ${q} шт` : `✅ Добавлено: ${q} шт`);
+      toast(had ? `Корзина обновлена: ${q} ${un(sp)}` : `✅ Добавлено: ${q} ${un(sp)}`);
       closeSheet();
       break;
     }
     case 'sdel': setQty(sp.i, 0); toast('Убрано из корзины'); closeSheet(); break;
+    case 'variant': {
+      const v = S.products[el.dataset.v];
+      if (v) { S.sheet = { id: v.i, q: cartQty(v.i) || minQty(v) }; haptic('select'); drawSheet(); }
+      break;
+    }
     case 'fav': toggleFav(sp.i); drawSheet(); if (S.route.v === 'fav') render(true); break;
     case 'mode':
       document.querySelectorAll('#seg button').forEach(b => b.classList.toggle('on', b === el));

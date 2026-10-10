@@ -278,3 +278,16 @@ main { padding: 4px 16px 0; }
   .top { background: color-mix(in srgb, var(--bg2) 88%, transparent); }
   .tabs { background: color-mix(in srgb, var(--bg) 92%, transparent); }
 }
+
+/* Фасовки одного товара */
+.packs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.packs span { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: var(--bg2); color: var(--hint); }
+.add.in { background: var(--ok); }
+.sheet .vars { margin: -2px 0 12px; }
+.sheet .vars small { display: block; color: var(--hint); font-size: 13px; margin-bottom: 6px; }
+.sheet .vars > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.sheet .var { border: 2px solid transparent; background: var(--bg2); color: inherit; font: inherit; font-weight: 700; padding: 8px 14px; border-radius: 12px; }
+.sheet .var.on { border-color: var(--accent); background: var(--soft); }
+.low.many { color: var(--ok); }
+.packs b.many { color: var(--ok); }
+.packs b.few { color: #e8590c; }
