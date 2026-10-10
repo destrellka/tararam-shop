@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
+<title>ТАРАРАМ — магазин</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="style.css?v=125ccd7931">
+<link rel="icon" href="logo.png?v=125ccd7931">
+<script>/* тёмная тема — до отрисовки, чтобы логотип не мигал */
+(function () { var t = window.Telegram && Telegram.WebApp, d = t && t.platform !== 'unknown' ? t.colorScheme === 'dark'
+  : window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches; if (d) document.documentElement.classList.add('dark'); })();</script>
+</head>
+<body>
+<div id="app">
+  <header class="top" id="top">
+    <div class="brand">
+      <span class="mark"><img src="logo.png?v=125ccd7931" alt=""></span>
+      <div><div class="logo">ТАРАРАМ</div><div class="tagline">посуда · упаковка · праздник</div></div>
+    </div>
+    <label class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Найти товар, например «стакан 250»">
+      <button class="clear" id="qclear" type="button" aria-label="Очистить" hidden>✕</button>
+    </label>
+  </header>
+
+  <main id="view"><div class="loading"><span class="mark big"><img src="logo.png?v=125ccd7931" alt=""></span>Загружаю каталог…</div></main>
+
+  <div class="cta" id="cta" hidden><button id="ctabtn" type="button"></button></div>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="home" class="on" type="button"><span class="tiw"><span class="ti">🛍️</span></span><span>Каталог</span></button>
+    <button data-tab="fav" type="button"><span class="tiw"><span class="ti">⭐</span></span><span>Избранное</span></button>
+    <button data-tab="cart" type="button"><span class="tiw"><span class="ti">🛒</span><b class="badge" id="badge" hidden></b></span><span>Корзина</span></button>
+  </nav>
+</div>
+
+<div class="sheet-wrap" id="sheet" hidden>
+  <div class="backdrop" data-act="close"></div>
+  <div class="sheet" id="sheetbody" role="dialog" aria-modal="true"></div>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js?v=125ccd7931"></script>
+</body>
+</html>
