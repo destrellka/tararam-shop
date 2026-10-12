@@ -156,6 +156,11 @@ function prepare(data, avail) {
   count('f');
   // перенесённая подборка считается в том разделе, где её показываем
   for (const c of Object.values(S.colls)) if (c.h) for (let f = F[c.h]; f; f = F[f.parent]) f.n += c.cnt;
+  // дубль в другом разделе: считаем в нём, но не в общем числе товаров каталога
+  for (const c of Object.values(S.colls)) {
+    const main = new Set(pathOf(c.h || c.f[0]).map(x => x.id));
+    for (const id of c.a || []) for (let f = F[id]; f && f.parent && !main.has(f.id); f = F[f.parent]) f.n += c.cnt;
+  }
 }
 
 // ---------- Фасовки: «Крышка 330 мл 10 шт» + «Крышка 330мл 50 шт» = одна карточка ----------
@@ -201,7 +206,7 @@ function allIn(fid, out = []) {
 // (если подборку перенесли в другой раздел — показываем её там, а не рядом с товарами)
 function collsIn(fid) {
   const under = id => S.folders[id] && pathOf(id).some(x => x.id === fid);
-  return Object.values(S.colls).filter(c => c.cnt && (c.h && S.folders[c.h] ? under(c.h) : c.f.some(under)));
+  return Object.values(S.colls).filter(c => c.cnt && ((c.h && S.folders[c.h] ? under(c.h) : c.f.some(under)) || (c.a || []).some(under)));
 }
 const range = c => (c.lo === c.hi ? money(c.lo) : `от ${money(c.lo).replace(' ₽', '')} до ${money(c.hi)}`);
 const kinds = n => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'вид' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'вида' : 'видов'}`;
