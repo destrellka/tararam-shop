@@ -463,7 +463,7 @@ function updateChrome(bump) {
     cta.hidden = !lines.length;
   }
   if (IN_TG && ver('6.1')) {
-    if (S.stack.length || S.sheet) tg.BackButton.show(); else tg.BackButton.hide();
+    if (S.stack.length || S.sheet || S.viewer) tg.BackButton.show(); else tg.BackButton.hide();
   }
 }
 
@@ -475,7 +475,24 @@ function go(route, push = true) {
   if (route.v !== 'search') { $('#q').value = ''; $('#qclear').hidden = true; }
   render();
 }
+// Фото товара на весь экран: закрывается нажатием или кнопкой «назад»
+function openViewer(src) {
+  const v = document.createElement('div');
+  v.className = 'viewer';
+  v.innerHTML = `<img src="${esc(src)}" alt=""><button class="x" type="button" aria-label="Закрыть">✕</button>`;
+  v.addEventListener('click', closeViewer);
+  document.body.appendChild(v);
+  S.viewer = v;
+  haptic('light');
+  updateChrome();
+}
+function closeViewer() {
+  if (S.viewer) S.viewer.remove();
+  S.viewer = null;
+  updateChrome();
+}
 function back() {
+  if (S.viewer) return closeViewer();
   if (S.sheet) return closeSheet();
   if (!S.stack.length) return;
   S.route = S.stack.pop();
@@ -507,7 +524,7 @@ function drawSheet() {
   const favBtn = `<button class="fav ${fav ? 'on' : ''}" data-act="fav" aria-label="Избранное">${fav ? '⭐' : '☆'}</button>`;
   $('#sheetbody').innerHTML = `
     <div class="grip"></div>
-    <div class="hero-ph" style="--h:${p.hue}">${p.ph ? `<img src="${esc(p.ph)}" alt="" onerror="this.outerHTML='${p.emoji}'">` : p.emoji}</div>
+    <div class="hero-ph${p.ph ? ' photo' : ''}" style="--h:${p.hue}" ${p.ph ? 'data-act="zoom"' : ''}>${p.ph ? `<img src="${esc(p.ph)}" alt="" onerror="this.parentNode.classList.remove('photo');this.parentNode.removeAttribute('data-act');this.outerHTML='${p.emoji}'"><span class="zoom">⤢</span>` : p.emoji}</div>
     <h2>${esc(multi(p) ? p.g.name : p.n)}</h2>
     ${multi(p) ? `<div class="vars"><small>Фасовка</small><div>${variants(p).map(v => `<button class="var${v.i === p.i ? ' on' : ''}" data-act="variant" data-v="${v.i}">${esc(v.pack)}${cartQty(v.i) ? ' ✓' : ''}</button>`).join('')}</div></div>` : ''}
     <div class="where">${esc(path)} · код ${esc(p.i)}</div>
@@ -663,6 +680,7 @@ document.addEventListener('click', e => {
       else if (confirm('Очистить корзину?')) { S.cart = {}; store.set('cart', '{}'); render(); }
       break;
     case 'close': closeSheet(); break;
+    case 'zoom': if (sp && sp.ph) openViewer(sp.ph); break;
     case 'sinc': S.sheet.q = capQ(sp, S.sheet.q + 1); haptic('select'); drawSheetDyn(); break;
     case 'sdec': S.sheet.q = Math.max(minQty(sp), S.sheet.q - 1); haptic('select'); drawSheetDyn(); break;
     case 'sadd': S.sheet.q = capQ(sp, S.sheet.q + Number(el.dataset.n)); haptic('select'); drawSheetDyn(); break;
