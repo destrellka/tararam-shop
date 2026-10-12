@@ -896,20 +896,57 @@ function submit() {
     // Открыто не кнопкой под полем ввода (кнопкой «Магазин» слева, из списка чатов или из сообщения):
     // такие окна не могут прислать заказ боту. Корзина уже сохранена — отправляем покупателя в чат с ботом,
     // бот даст кнопку «🛒 Оформить заказ», и витрина откроется сразу на оформлении.
-    if (S.shop.bot && ver('6.1')) {
-      tg.openTelegramLink(`https://t.me/${S.shop.bot}?start=checkout`);
-      setTimeout(() => tg.close(), 400);
+    if (S.shop.relay && tg.initData) {   // есть «почтовый ящик» — заказ уходит сразу
+      sendViaRelay(payload);
       return;
     }
+    if (handoffToBot()) return;
     tg.showAlert('Корзина сохранена ✅\n\nЧтобы отправить заказ, нажмите «🛍 Открыть магазин» в меню под полем ввода сообщения. Корзина будет там же.', () => tg.close());
     return;
   }
   haptic('success');
-  S.cart = {};
-  S.req = {};
-  store.set('cart', '{}');
-  store.set('req', '{}');
+  clearAfterOrder();
   tg.sendData(payload); // Telegram закроет витрину, а бот пришлёт подтверждение в чат
+}
+// Перейти в чат с ботом: он даст кнопку «🛒 Оформить заказ», которая откроет витрину сразу на оформлении
+function handoffToBot() {
+  if (!S.shop.bot || !ver('6.1')) return false;
+  tg.openTelegramLink(`https://t.me/${S.shop.bot}?start=checkout`);
+  setTimeout(() => tg.close(), 400);
+  return true;
+}
+function clearAfterOrder() {
+  S.cart = {}; S.req = {};
+  store.set('cart', '{}'); store.set('req', '{}');
+}
+let sending = false;
+async function sendViaRelay(payload) {
+  if (sending) return;
+  sending = true;
+  const btn = $('#ctabtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span>Отправляю заказ…</span>';
+  let ok = false;
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 8000);
+    const r = await fetch(S.shop.relay.replace(/\/$/, '') + '/order', {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' }, signal: ctl.signal,
+      body: JSON.stringify({ init: tg.initData, data: payload }),
+    });
+    clearTimeout(t);
+    ok = r.ok;
+  } catch (e) { ok = false; }
+  sending = false;
+  btn.disabled = false;
+  if (ok) {
+    haptic('success');
+    clearAfterOrder();
+    tg.showAlert('✅ Заказ отправлен!\n\nПодтверждение с номером заказа придёт в чат с ботом.', () => tg.close());
+    return;
+  }
+  updateChrome();   // ящик не ответил — оформляем по-старому, через чат (корзина сохранена)
+  if (!handoffToBot()) tg.showAlert('Корзина сохранена ✅\n\nЧтобы отправить заказ, нажмите «🛍 Открыть магазин» в меню под полем ввода сообщения.', () => tg.close());
 }
 function askContact() {
   tg.requestContact((shared, res) => {
