@@ -14,6 +14,7 @@ const MAX_DATA = 4096; // столько байт Telegram пропускает 
 const S = {
   shop: {}, delivery: {}, folders: {}, products: {}, order: [], out: new Set(), left: {},
   cart: {}, fav: [], profile: {}, route: { v: 'home' }, stack: [], sheet: null,
+  colls: {}, req: {},   // подборки «выбор на месте» и что из них отложить: {id подборки: текст}
 };
 
 // ---------- Хранение на телефоне (облако Telegram, если есть, плюс память браузера) ----------
@@ -104,6 +105,11 @@ function search(text) {
   if (!q[0].length && !q[1].length) return [];
   return collapse(S.order.filter(p => orderable(p) && matches(q, p)));
 }
+function searchColls(text) {
+  const q = tokens(text.trim());
+  if (!q[0].length) return [];
+  return Object.values(S.colls).filter(c => c.cnt && matches([q[0], []], c.sx));
+}
 
 // ---------- Каталог ----------
 const EMOJI = /^(\p{Extended_Pictographic}[️‍\p{Extended_Pictographic}]*)\s*/u;
@@ -121,17 +127,32 @@ function prepare(data, avail) {
   const tops = (F.f && F.f.kids) || [];
   tops.forEach((id, n) => { if (F[id]) F[id].hue = [340, 22, 200, 280, 40, 320, 12, 140, 180, 250][n % 10]; });
   const topOf = id => { let f = F[id]; while (f && f.parent && f.parent !== 'f') f = F[f.parent]; return f; };
+  S.colls = {};
+  for (const c of data.colls || []) {
+    const top = topOf(c.f[0]);
+    Object.assign(c, { items: [], ph: c.ph || [], emoji: (top && top.emoji) || '🎁', hue: (top && top.hue) || 340 });
+    const mark = id => { const f = F[id]; if (!f || f.coll) return; f.coll = c; f.kids.forEach(mark); };
+    c.f.forEach(mark);
+    c.sx = { n: [c.t, ...c.f.filter(id => F[id]).map(id => F[id].name)].join(' ') };
+    S.colls[c.id] = c;
+  }
   for (const [i, n, f, t, ph, d] of data.products) {
     if (!F[f]) continue;
     const top = topOf(f);
     const p = { i, n, f, t, ph, d, emoji: (top && top.emoji) || '📦', hue: (top && top.hue) || 340 };
     S.products[i] = p;
-    S.order.push(p);
     F[f].own.push(p);
+    if (F[f].coll) F[f].coll.items.push(p);   // товары подборки не показываем по одному и не ищем
+    else S.order.push(p);
   }
   S.folders = F;
   for (const f of Object.values(F)) groupVariants(f.own);
   count('f');
+  for (const c of Object.values(S.colls)) {
+    const ok = c.items.filter(orderable);
+    const prices = ok.map(p => p.t[0][1]);
+    Object.assign(c, { cnt: ok.length, lo: Math.min(...prices), hi: Math.max(...prices) });
+  }
 }
 
 // ---------- Фасовки: «Крышка 330 мл 10 шт» + «Крышка 330мл 50 шт» = одна карточка ----------
@@ -167,10 +188,17 @@ function count(fid) {
 }
 function allIn(fid, out = []) {
   const f = S.folders[fid];
+  if (f.coll) return out;   // подборка показывается одной карточкой
   for (const p of collapse(f.own.filter(orderable))) out.push(p);
   for (const k of f.kids) if (S.folders[k]) allIn(k, out);
   return out;
 }
+// Подборки, разделы которых лежат внутри этого раздела
+function collsIn(fid) {
+  return Object.values(S.colls).filter(c => c.cnt && c.f.some(id => pathOf(id).some(x => x.id === fid)));
+}
+const range = c => (c.lo === c.hi ? money(c.lo) : `от ${money(c.lo).replace(' ₽', '')} до ${money(c.hi)}`);
+const kinds = n => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'вид' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'вида' : 'видов'}`;
 function pathOf(fid) {
   const out = [];
   for (let f = S.folders[fid]; f && f.parent; f = S.folders[f.parent]) out.unshift(f);
@@ -190,6 +218,21 @@ function cartLines() {
     total += price * q;
   }
   return { lines, total: Math.round(total * 100) / 100 };
+}
+// Что отложить из подборок: [[подборка, текст]]
+const reqLines = () => Object.entries(S.req).filter(([id, t]) => S.colls[id] && t).map(([id, t]) => [S.colls[id], t]);
+function setReq(id, text) {
+  text = (text || '').trim().slice(0, 300);
+  const had = !!S.req[id];
+  if (text) S.req[id] = text; else delete S.req[id];
+  store.set('req', JSON.stringify(S.req));
+  haptic(text ? 'success' : 'soft');
+  updateChrome(text && !had);
+}
+function clearCart() {
+  S.cart = {}; S.req = {};
+  store.set('cart', '{}'); store.set('req', '{}');
+  render();
 }
 function setQty(id, q, silent) {
   const p = S.products[id];
@@ -253,6 +296,18 @@ function groupRow(p) {
     <div class="ctl"><button class="add${inCart ? ' in' : ''}" data-act="open" aria-label="Выбрать фасовку">${inCart ? '✓' : '+'}</button></div>
   </div>`;
 }
+function collRow(c) {
+  const img = c.ph.length ? `<img class="thumb" loading="lazy" alt="" src="${esc(c.ph[0])}">` : `<div class="ph" style="--h:${c.hue}">${c.emoji}</div>`;
+  return `<button class="crow" data-go="coll" data-id="${c.id}">
+    ${img}
+    <div class="pinfo">
+      <div class="pname">${esc(c.t)}</div>
+      <div class="pprice">${range(c)}</div>
+      <span class="ctag">🏪 Выбор на месте · ${kinds(c.cnt)}</span>${S.req[c.id] ? '<span class="ctag on">✓ отложено</span>' : ''}
+    </div>
+    <span class="chev">›</span>
+  </button>`;
+}
 function refreshControls(id) {
   const p0 = S.products[id];
   for (const v of p0 && p0.g ? p0.g.items : [p0]) {
@@ -311,19 +366,48 @@ const VIEWS = {
     const f = S.folders[r.id];
     if (!f) return VIEWS.home();
     const path = pathOf(f.id);
-    const kids = f.kids.map(id => S.folders[id]).filter(k => k && k.n);
+    const kids = f.kids.map(id => S.folders[id]).filter(k => k && k.n && !k.coll);
+    const colls = collsIn(f.id);
     return `
     <div class="crumbs"><button data-go="home">Каталог</button>${path.slice(0, -1).map(x => ` › <button data-go="folder" data-id="${x.id}">${esc(x.name)}</button>`).join('')}</div>
     <div class="vt">${f.emoji ? f.emoji + ' ' : ''}${esc(f.name)}<small>${f.n}</small></div>
     ${kids.length ? `<div class="kids">${kids.map(k => `<button class="kid" data-go="folder" data-id="${k.id}">${esc(k.name)}<em>${k.n}</em></button>`).join('')}</div>` : ''}
+    ${colls.length ? `<div class="crows">${colls.map(collRow).join('')}</div>` : ''}
     <div class="plist" id="plist"></div><div class="more" id="more">Загружаю ещё…</div>`;
+  },
+  coll(r) {
+    const c = S.colls[r.id];
+    if (!c) return VIEWS.home();
+    const path = pathOf(c.f[0]);
+    const had = S.req[c.id] || '';
+    const gal = c.ph.length
+      ? `<div class="gal${c.ph.length === 1 ? ' one' : ''}">${c.ph.map(src => `<div class="gi" data-act="czoom" data-src="${esc(src)}"><img loading="lazy" alt="" src="${esc(src)}"><span class="zoom">⤢</span></div>`).join('')}</div>`
+      : `<div class="hero-ph" style="--h:${c.hue}">${c.emoji}</div>`;
+    return `
+    <div class="crumbs"><button data-go="home">Каталог</button>${path.slice(0, -1).map(x => ` › <button data-go="folder" data-id="${x.id}">${esc(x.name)}</button>`).join('')}</div>
+    <div class="coll">
+      ${gal}
+      <h2>${esc(c.t)}</h2>
+      <div class="cmeta">${c.cnt ? `<span class="low many">в наличии ${kinds(c.cnt)}</span><b>${range(c)}</b>` : '<span class="na">сейчас нет в наличии</span>'}</div>
+      <p class="desc">${esc(c.d)}</p>
+      <div class="card">
+        <label class="field"><span>Что отложить</span>
+          <textarea id="creq" rows="3" maxlength="300" placeholder="Например: А20 — 10 шт, М26 — 5 шт. Или опишите: розовая коробка 20×20, 1 шт">${esc(had)}</textarea></label>
+        <button class="big-btn" data-act="creq" data-id="${c.id}">${had ? 'Сохранить изменения' : 'Отложить'}</button>
+        ${had ? `<button class="linkbtn danger" data-act="cdel" data-id="${c.id}" style="width:100%;margin-top:6px">Не откладывать</button>` : ''}
+        <p class="note">Цена по ценнику, оплата при получении. Менеджер свяжется и подтвердит, что всё отложено.</p>
+      </div>
+    </div>`;
   },
   search(r) {
     r.items = search(r.q);
+    const colls = searchColls(r.q);
+    const top = colls.length ? `<div class="crows">${colls.map(collRow).join('')}</div>` : '';
+    if (!r.items.length && colls.length) return `<div class="vt">Поиск</div>${top}`;
     if (!r.items.length) {
       return `<div class="empty"><div class="big">🔍</div><b>Ничего не нашлось</b>По запросу «${esc(r.q)}» товаров нет. Попробуйте другое слово, например «контейнер» или «пакет».</div>`;
     }
-    return `<div class="vt">Поиск<small>${r.items.length}</small></div><div class="plist" id="plist"></div><div class="more" id="more">Загружаю ещё…</div>`;
+    return `<div class="vt">Поиск<small>${r.items.length}</small></div>${top}<div class="plist" id="plist"></div><div class="more" id="more">Загружаю ещё…</div>`;
   },
   fav(r) {
     r.items = S.fav.map(id => S.products[id]).filter(Boolean);
@@ -334,12 +418,17 @@ const VIEWS = {
   },
   cart() {
     const { lines, total } = cartLines();
-    if (!lines.length) {
+    const reqs = reqLines();
+    if (!lines.length && !reqs.length) {
       return `<div class="empty"><div class="big">🛒</div><b>Корзина пока пуста</b>Загляните в каталог или найдите товар через поиск.<br><button class="btn" data-go="home">Перейти в каталог</button></div>`;
     }
     return `
-    <div class="vt">Корзина<small>${lines.length} поз.</small></div>
-    <div class="card">${lines.map(({ p, q, price, sum }) => {
+    <div class="vt">Корзина<small>${lines.length + reqs.length} поз.</small></div>
+    ${reqs.length ? `<div class="sec-t">Отложить, выбор на месте</div><div class="card">${reqs.map(([c, text]) => `<div class="rq">
+        <div class="nm">${esc(c.t)}</div><div class="rt">${esc(text)}</div>
+        <div class="row"><button class="linkbtn" data-go="coll" data-id="${c.id}">Изменить</button><button class="linkbtn danger" data-act="cdel" data-id="${c.id}">Убрать</button><small>цена по ценнику</small></div>
+      </div>`).join('')}</div>` : ''}
+    ${lines.length ? `<div class="card">${lines.map(({ p, q, price, sum }) => {
       const nx = nextTier(p, q);
       const gone = !orderable(p);
       const over = !gone && leftOf(p) != null && q > leftOf(p);
@@ -354,17 +443,18 @@ const VIEWS = {
           ${nx && !gone ? `<div class="hint">💡 Ещё ${nx[0] - q} шт — и цена ${money(nx[1])}/шт</div>` : ''}
         </div>
       </div>`;
-    }).join('')}</div>
+    }).join('')}</div>` : ''}
     <div class="card totals">
-      <div><span>Товары</span><span>${money(total)}</span></div>
-      <div class="grand"><span>Итого</span><span>${money(total)}</span></div>
+      ${lines.length ? `<div><span>Товары</span><span>${money(total)}</span></div>` : ''}
+      ${reqs.length ? `<div><span>Отложить на выбор</span><span>по ценнику</span></div>` : ''}
+      ${lines.length ? `<div class="grand"><span>Итого${reqs.length ? ' без отложенного' : ''}</span><span>${money(total)}</span></div>` : ''}
       <p class="note">${esc(S.delivery.note || '')}</p>
     </div>
     <button class="linkbtn danger" data-act="clear">Очистить корзину</button>`;
   },
   checkout() {
-    const { lines, total } = cartLines();
-    if (!lines.length) return VIEWS.cart();
+    const { lines } = cartLines();
+    if (!lines.length && !reqLines().length) return VIEWS.cart();
     const pr = S.profile;
     const mode = pr.d === 'delivery' ? 'delivery' : 'pickup';
     const user = (IN_TG && tg.initDataUnsafe && tg.initDataUnsafe.user) || {};
@@ -420,9 +510,11 @@ function drawCheckoutParts() {
     : `🚚 ${esc(S.delivery.note || '')}`;
   $('#addrf').hidden = mode !== 'delivery';
   const cost = mode === 'delivery' ? deliveryCost(total) : 0;
-  const rows = [`<div><span>Товары (${lines.length} поз.)</span><span>${money(total)}</span></div>`];
+  const reqs = reqLines();
+  const rows = lines.length ? [`<div><span>Товары (${lines.length} поз.)</span><span>${money(total)}</span></div>`] : [];
+  if (reqs.length) rows.push(`<div><span>Отложить на выбор (${reqs.length})</span><span>по ценнику</span></div>`);
   if (mode === 'delivery') rows.push(`<div><span>Доставка</span><span>${cost == null ? 'уточнит менеджер' : cost ? money(cost) : 'бесплатно'}</span></div>`);
-  rows.push(`<div class="grand"><span>Итого</span><span>${money(total + (cost || 0))}</span></div>`);
+  if (lines.length) rows.push(`<div class="grand"><span>Итого${reqs.length ? ' без отложенного' : ''}</span><span>${money(total + (cost || 0))}</span></div>`);
   $('#totals').innerHTML = rows.join('');
 }
 
@@ -441,11 +533,12 @@ function render(keepScroll) {
 
 function updateChrome(bump) {
   const { lines, total } = cartLines();
+  const n = lines.length + reqLines().length;
   const badge = $('#badge');
-  badge.hidden = !lines.length;
-  badge.textContent = lines.length;
+  badge.hidden = !n;
+  badge.textContent = n;
   if (bump) { badge.classList.remove('bump'); void badge.offsetWidth; badge.classList.add('bump'); }
-  const tab = { home: 'home', folder: 'home', search: 'home', fav: 'fav', cart: 'cart', checkout: 'cart' }[S.route.v];
+  const tab = { home: 'home', folder: 'home', coll: 'home', search: 'home', fav: 'fav', cart: 'cart', checkout: 'cart' }[S.route.v];
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
 
   const cta = $('#cta'), btn = $('#ctabtn');
@@ -453,14 +546,14 @@ function updateChrome(bump) {
   if (S.route.v === 'checkout') {
     const cost = checkoutMode() === 'delivery' ? deliveryCost(total) || 0 : 0;
     btn.className = 'center';
-    btn.innerHTML = `<span>Отправить заказ</span><span>${money(total + cost)}</span>`;
-    cta.hidden = !lines.length;
+    btn.innerHTML = `<span>Отправить заказ</span>${lines.length ? `<span>${money(total + cost)}</span>` : ''}`;
+    cta.hidden = !n;
   } else if (S.route.v === 'cart') {
-    btn.innerHTML = `<span>Оформить заказ</span><span>${money(total)}</span>`;
-    cta.hidden = !lines.length;
+    btn.innerHTML = `<span>Оформить заказ</span>${lines.length ? `<span>${money(total)}</span>` : ''}`;
+    cta.hidden = !n;
   } else {
-    btn.innerHTML = `<span>🛒 Корзина · ${lines.length} поз.</span><span>${money(total)}</span>`;
-    cta.hidden = !lines.length;
+    btn.innerHTML = `<span>🛒 Корзина · ${n} поз.</span>${lines.length ? `<span>${money(total)}</span>` : ''}`;
+    cta.hidden = !n;
   }
   if (IN_TG && ver('6.1')) {
     if (S.stack.length || S.sheet || S.viewer) tg.BackButton.show(); else tg.BackButton.hide();
@@ -469,6 +562,8 @@ function updateChrome(bump) {
 
 // ---------- Навигация ----------
 function go(route, push = true) {
+  const f = route.v === 'folder' && S.folders[route.id];
+  if (f && f.coll) route = { v: 'coll', id: f.coll.id };   // раздел из подборки открывается её карточкой
   S.route.y = window.scrollY;
   if (push) S.stack.push(S.route); else S.stack = route.v === 'home' ? [] : [{ v: 'home' }];
   S.route = route;
@@ -595,11 +690,12 @@ function submit() {
   if (p.replace(/\D/g, '').length < 10) return fieldError('#f-phone', 'Напишите номер полностью, например +7 900 123-45-67');
   if (mode === 'delivery' && a.length < 5) return fieldError('#f-addr', 'Напишите адрес доставки');
   const { lines, total } = cartLines();
+  const reqs = reqLines();
   const gone = lines.filter(l => !orderable(l.p));
   if (gone.length) { toast('Уберите из корзины то, чего нет в наличии'); go({ v: 'cart' }, false); return; }
   const over = lines.filter(l => leftOf(l.p) != null && l.q > leftOf(l.p));
   if (over.length) { toast('Столько нет на складе — поправьте количество в корзине'); go({ v: 'cart' }, false); return; }
-  const payload = JSON.stringify({ v: 1, i: lines.map(l => [l.p.i, l.q]), n, p, d: mode, a, c, t: total });
+  const payload = JSON.stringify({ v: 1, i: lines.map(l => [l.p.i, l.q]), r: reqs.map(([cl, text]) => [cl.id, cl.t, text]), n, p, d: mode, a, c, t: total });
   if (new TextEncoder().encode(payload).length > MAX_DATA) {
     toast('Слишком большой заказ для одного раза. Разделите его на два или сократите комментарий.');
     return;
@@ -614,7 +710,9 @@ function submit() {
   }
   haptic('success');
   S.cart = {};
+  S.req = {};
   store.set('cart', '{}');
+  store.set('req', '{}');
   tg.sendData(payload); // Telegram закроет витрину, а бот пришлёт подтверждение в чат
 }
 function askContact() {
@@ -653,7 +751,7 @@ document.addEventListener('click', e => {
   const goEl = e.target.closest('[data-go]');
   if (goEl) {
     const v = goEl.dataset.go;
-    if (v === 'folder') go({ v, id: goEl.dataset.id }); else go({ v }, v !== 'home' && v !== 'fav');
+    if (v === 'folder' || v === 'coll') { closeSheet(); go({ v, id: goEl.dataset.id }); } else go({ v }, v !== 'home' && v !== 'fav');
     return;
   }
   const tab = e.target.closest('[data-tab]');
@@ -676,11 +774,22 @@ document.addEventListener('click', e => {
     case 'dec': if (p) setQty(id, cartQty(id) - 1 < minQty(p) ? 0 : cartQty(id) - 1); break;
     case 'del': if (p) setQty(id, 0); break;
     case 'clear':
-      if (IN_TG && ver('6.2')) tg.showConfirm('Очистить корзину?', ok => { if (ok) { S.cart = {}; store.set('cart', '{}'); render(); } });
-      else if (confirm('Очистить корзину?')) { S.cart = {}; store.set('cart', '{}'); render(); }
+      if (IN_TG && ver('6.2')) tg.showConfirm('Очистить корзину?', ok => { if (ok) clearCart(); });
+      else if (confirm('Очистить корзину?')) clearCart();
       break;
     case 'close': closeSheet(); break;
     case 'zoom': if (sp && sp.ph) openViewer(sp.ph); break;
+    case 'czoom': openViewer(el.dataset.src); break;
+    case 'creq': {
+      const text = $('#creq').value.trim();
+      if (!text) { fieldError('#creq', 'Напишите, что отложить: номера или размер и сколько штук'); break; }
+      const had = S.req[el.dataset.id];
+      setReq(el.dataset.id, text);
+      toast(had ? 'Сохранено' : '✅ Добавлено в корзину: отложим к вашему приходу');
+      render(true);
+      break;
+    }
+    case 'cdel': setReq(el.dataset.id, ''); toast('Убрано'); render(true); break;
     case 'sinc': S.sheet.q = capQ(sp, S.sheet.q + 1); haptic('select'); drawSheetDyn(); break;
     case 'sdec': S.sheet.q = Math.max(minQty(sp), S.sheet.q - 1); haptic('select'); drawSheetDyn(); break;
     case 'sadd': S.sheet.q = capQ(sp, S.sheet.q + Number(el.dataset.n)); haptic('select'); drawSheetDyn(); break;
@@ -750,9 +859,9 @@ async function start() {
   try {
     let v = '';
     try { v = (await getJson('version.json?t=' + Date.now())).v || ''; } catch (e) { /* без версии тоже работаем */ }
-    const [data, avail, cart, fav, profile] = await Promise.all([
+    const [data, avail, cart, fav, profile, req] = await Promise.all([
       getJson('data.json?v=' + v), getJson('avail.json?v=' + v).catch(() => ({ out: [], left: {} })),
-      store.get('cart'), store.get('fav'), store.get('profile'),
+      store.get('cart'), store.get('fav'), store.get('profile'), store.get('req'),
     ]);
     prepare(data, avail);
     S.cart = {};
@@ -764,6 +873,8 @@ async function start() {
     }
     if (cut) { store.set('cart', JSON.stringify(S.cart)); setTimeout(() => toast('Часть товаров закончилась на складе — количество в корзине уменьшено'), 400); }
     S.fav = parse(fav, []).filter(id => S.products[id]);
+    S.req = {};
+    for (const [id, t] of Object.entries(parse(req, {}))) if (S.colls[id] && t) S.req[id] = String(t).slice(0, 300);
     S.profile = parse(profile, {});
     render();
   } catch (e) {

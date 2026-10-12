@@ -254,7 +254,7 @@ img.thumb { object-fit: contain; background: #fff; }
   font-weight: 750; font-size: 16px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px;
   box-shadow: 0 12px 26px -10px rgba(247, 43, 107, .75); animation: pop .25s ease;
 }
-.cta button span:last-child { background: rgba(255, 255, 255, .22); padding: 5px 10px; border-radius: 10px; font-size: 15px; }
+.cta button span:last-child:not(:only-child) { background: rgba(255, 255, 255, .22); padding: 5px 10px; border-radius: 10px; font-size: 15px; }
 .cta button.center { justify-content: center; gap: 10px; }
 @keyframes pop { from { transform: translateY(20px); opacity: 0; } }
 .tabs {
@@ -300,3 +300,34 @@ img.thumb { object-fit: contain; background: #fff; }
 .low.many { color: var(--ok); }
 .packs b.many { color: var(--ok); }
 .packs b.few { color: #e8590c; }
+
+/* ---------- Подборки «выбор на месте» (подарочные коробки и пакеты) ---------- */
+.crows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.crow {
+  display: grid; grid-template-columns: 64px 1fr auto; gap: 12px; align-items: center; text-align: left; width: 100%;
+  background: var(--card); border-radius: var(--r); padding: 10px; border: 1.5px solid hsl(var(--h, 340) 90% 60% / .35);
+}
+.crow img.thumb { object-fit: cover; }
+.crow .chev { color: var(--hint); font-size: 26px; padding: 0 4px; }
+.ctag { display: inline-block; margin: 5px 6px 0 0; font-size: 12px; font-weight: 700; color: var(--accent); background: var(--soft); padding: 2px 8px; border-radius: 99px; }
+.ctag.on { color: var(--ok); background: var(--okbg); }
+.coll h2 { font-size: 20px; line-height: 1.25; margin: 0 0 6px; font-weight: 750; }
+.coll .desc { font-size: 14px; opacity: .85; margin: 8px 0 14px; white-space: pre-line; }
+.cmeta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cmeta .low { display: inline; margin: 0; }
+.cmeta b { font-size: 16px; }
+.gal { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 0 -16px 14px; padding: 0 16px; scrollbar-width: none; }
+.gal::-webkit-scrollbar { display: none; }
+.gi { position: relative; flex: none; width: 82%; height: 260px; border-radius: 18px; overflow: hidden; background: #fff; scroll-snap-align: center; cursor: zoom-in; }
+.gal.one .gi { width: 100%; }
+.gi img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gi .zoom { position: absolute; right: 10px; bottom: 10px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(0,0,0,.45); color: #fff; font-size: 16px; pointer-events: none; }
+.coll .big-btn { margin-top: 4px; }
+.rq { padding: 10px 0; border-bottom: 1px solid var(--sep); }
+.rq:first-child { padding-top: 2px; }
+.rq:last-child { border: 0; padding-bottom: 2px; }
+.rq .nm { font-size: 14px; font-weight: 700; }
+.rq .rt { font-size: 14px; margin-top: 4px; white-space: pre-line; }
+.rq .row { display: flex; align-items: center; gap: 14px; margin-top: 4px; }
+.rq .row small { margin-left: auto; color: var(--hint); font-size: 12px; }
