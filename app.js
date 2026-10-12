@@ -257,6 +257,21 @@ function setQty(id, q, silent) {
   refreshControls(id);
   updateChrome(q > had);
 }
+// Избранное из бота приходит в адресе витрины (?fav=…). Что там появилось с прошлого раза — добавляем,
+// что пропало — убираем, а остальное, отмеченное здесь, не трогаем.
+function syncBotFav(lastRaw) {
+  const raw = new URLSearchParams(location.search).get('fav');
+  if (raw == null) return;
+  const now = raw.split(',').filter(id => S.products[id]);
+  const last = parse(lastRaw, []);
+  const added = now.filter(id => !last.includes(id) && !S.fav.includes(id));
+  const removed = last.filter(id => !now.includes(id));
+  if (added.length || removed.length) {
+    S.fav = [...added, ...S.fav.filter(id => !removed.includes(id))].slice(0, 500);
+    store.set('fav', JSON.stringify(S.fav));
+  }
+  store.set('favbot', JSON.stringify(now));
+}
 function toggleFav(id) {
   const on = S.fav.includes(id);
   S.fav = on ? S.fav.filter(x => x !== id) : [id, ...S.fav].slice(0, 500);
@@ -718,7 +733,9 @@ function submit() {
   if (gone.length) { toast('Уберите из корзины то, чего нет в наличии'); go({ v: 'cart' }, false); return; }
   const over = lines.filter(l => leftOf(l.p) != null && l.q > leftOf(l.p));
   if (over.length) { toast('Столько нет на складе — поправьте количество в корзине'); go({ v: 'cart' }, false); return; }
-  const payload = JSON.stringify({ v: 1, i: lines.map(l => [l.p.i, l.q]), r: reqs.map(([cl, text]) => [cl.id, cl.t, text]), n, p, d: mode, a, c, t: total });
+  const order = { v: 1, i: lines.map(l => [l.p.i, l.q]), r: reqs.map(([cl, text]) => [cl.id, cl.t, text]), n, p, d: mode, a, c, t: total };
+  let payload = JSON.stringify({ ...order, f: S.fav.slice(0, 150) });   // избранное — чтобы оно было и в боте
+  if (new TextEncoder().encode(payload).length > MAX_DATA) payload = JSON.stringify(order);
   if (new TextEncoder().encode(payload).length > MAX_DATA) {
     toast('Слишком большой заказ для одного раза. Разделите его на два или сократите комментарий.');
     return;
@@ -900,6 +917,7 @@ async function start() {
     }
     if (cut) { store.set('cart', JSON.stringify(S.cart)); setTimeout(() => toast('Часть товаров закончилась на складе — количество в корзине уменьшено'), 400); }
     S.fav = parse(fav, []).filter(id => S.products[id]);
+    syncBotFav(await store.get('favbot'));
     S.req = {};
     for (const [id, t] of Object.entries(parse(req, {}))) if (S.colls[id] && t) S.req[id] = String(t).slice(0, 300);
     S.profile = parse(profile, {});
