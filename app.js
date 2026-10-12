@@ -576,13 +576,25 @@ function go(route, push = true) {
   if (route.v !== 'search') { $('#q').value = ''; $('#qclear').hidden = true; }
   render();
 }
-// Фото товара на весь экран: закрывается нажатием или кнопкой «назад»
-function openViewer(src) {
+// Фото на весь экран: несколько фото листаются свайпом; закрывается крестиком, кнопкой «назад» или нажатием на фон
+function openViewer(srcs, start = 0) {
+  srcs = [].concat(srcs);
   const v = document.createElement('div');
   v.className = 'viewer';
-  v.innerHTML = `<img src="${esc(src)}" alt=""><button class="x" type="button" aria-label="Закрыть">✕</button>`;
-  v.addEventListener('click', closeViewer);
+  v.innerHTML = `<div class="vstrip">${srcs.map(src => `<div class="vslide"><img src="${esc(src)}" alt=""></div>`).join('')}</div>
+    <button class="x" type="button" aria-label="Закрыть">✕</button>
+    ${srcs.length > 1 ? `<div class="vcount"><span>${start + 1}</span> / ${srcs.length}</div>
+      <button class="vnav prev" type="button" aria-label="Назад">‹</button><button class="vnav next" type="button" aria-label="Дальше">›</button>` : ''}`;
+  const strip = v.querySelector('.vstrip');
+  const at = () => Math.round(strip.scrollLeft / strip.clientWidth);
+  v.addEventListener('click', e => {
+    const nav = e.target.closest('.vnav');
+    if (nav) { strip.scrollTo({ left: (at() + (nav.classList.contains('next') ? 1 : -1)) * strip.clientWidth, behavior: 'smooth' }); return; }
+    if (!e.target.closest('img')) closeViewer();
+  });
+  strip.addEventListener('scroll', () => { const c = v.querySelector('.vcount span'); if (c) c.textContent = at() + 1; }, { passive: true });
   document.body.appendChild(v);
+  strip.scrollLeft = start * strip.clientWidth;
   S.viewer = v;
   haptic('light');
   updateChrome();
@@ -785,7 +797,11 @@ document.addEventListener('click', e => {
       break;
     case 'close': closeSheet(); break;
     case 'zoom': if (sp && sp.ph) openViewer(sp.ph); break;
-    case 'czoom': openViewer(el.dataset.src); break;
+    case 'czoom': {
+      const srcs = [...document.querySelectorAll('.gal .gi')].map(x => x.dataset.src);
+      openViewer(srcs, Math.max(0, srcs.indexOf(el.dataset.src)));
+      break;
+    }
     case 'creq': {
       const text = $('#creq').value.trim();
       if (!text) { fieldError('#creq', 'Напишите, что отложить: номера или размер и сколько штук'); break; }
