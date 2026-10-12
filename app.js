@@ -147,12 +147,15 @@ function prepare(data, avail) {
   }
   S.folders = F;
   for (const f of Object.values(F)) groupVariants(f.own);
-  count('f');
   for (const c of Object.values(S.colls)) {
     const ok = c.items.filter(orderable);
     const prices = ok.map(p => p.t[0][1]);
     Object.assign(c, { cnt: ok.length, lo: Math.min(...prices), hi: Math.max(...prices) });
+    if (c.h && !F[c.h]) c.h = '';
   }
+  count('f');
+  // перенесённая подборка считается в том разделе, где её показываем
+  for (const c of Object.values(S.colls)) if (c.h) for (let f = F[c.h]; f; f = F[f.parent]) f.n += c.cnt;
 }
 
 // ---------- Фасовки: «Крышка 330 мл 10 шт» + «Крышка 330мл 50 шт» = одна карточка ----------
@@ -183,6 +186,7 @@ const multi = p => variants(p).length > 1;
 const un = p => (p && p.g && p._pk.n > 1 ? 'уп.' : 'шт');   // фасовку «50 шт» считаем упаковками
 function count(fid) {
   const f = S.folders[fid];
+  if (f.coll && f.coll.h) return (f.n = 0);
   f.n = collapse(f.own.filter(orderable)).length + f.kids.reduce((s, k) => s + (S.folders[k] ? count(k) : 0), 0);
   return f.n;
 }
@@ -194,8 +198,10 @@ function allIn(fid, out = []) {
   return out;
 }
 // Подборки, разделы которых лежат внутри этого раздела
+// (если подборку перенесли в другой раздел — показываем её там, а не рядом с товарами)
 function collsIn(fid) {
-  return Object.values(S.colls).filter(c => c.cnt && c.f.some(id => pathOf(id).some(x => x.id === fid)));
+  const under = id => S.folders[id] && pathOf(id).some(x => x.id === fid);
+  return Object.values(S.colls).filter(c => c.cnt && (c.h && S.folders[c.h] ? under(c.h) : c.f.some(under)));
 }
 const range = c => (c.lo === c.hi ? money(c.lo) : `от ${money(c.lo).replace(' ₽', '')} до ${money(c.hi)}`);
 const kinds = n => `${n} ${n % 10 === 1 && n % 100 !== 11 ? 'вид' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'вида' : 'видов'}`;
@@ -378,7 +384,7 @@ const VIEWS = {
   coll(r) {
     const c = S.colls[r.id];
     if (!c) return VIEWS.home();
-    const path = pathOf(c.f[0]);
+    const path = c.h && S.folders[c.h] ? [...pathOf(c.h), null] : pathOf(c.f[0]);
     const had = S.req[c.id] || '';
     const gal = c.ph.length
       ? `<div class="gal${c.ph.length === 1 ? ' one' : ''}">${c.ph.map(src => `<div class="gi" data-act="czoom" data-src="${esc(src)}"><img loading="lazy" alt="" src="${esc(src)}"><span class="zoom">⤢</span></div>`).join('')}</div>`
