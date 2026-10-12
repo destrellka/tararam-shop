@@ -282,10 +282,13 @@ function toggleFav(id) {
 }
 
 // ---------- Отрисовка ----------
+// Маленькая копия фото для списков (photos/s/…); если её нет — большое фото, если и его нет — значок
+const small = src => src.replace(/^photos\//, 'photos/s/');
+const smallImg = (src, cls, ph) => `<img class="${cls}" loading="lazy" alt="" src="${esc(small(src))}" data-big="${esc(src)}" data-ph="${esc(ph)}" onerror="if(this.dataset.big){this.src=this.dataset.big;this.dataset.big=''}else{this.outerHTML=this.dataset.ph}">`;
 function thumb(p, cls = 'thumb') {
   const ph = `<div class="ph" style="--h:${p.hue}">${p.emoji}</div>`;
   if (!p.ph) return ph;
-  return `<img class="${cls}" loading="lazy" alt="" src="${esc(p.ph)}" onerror="this.outerHTML=this.dataset.ph" data-ph="${esc(ph)}">`;
+  return smallImg(p.ph, cls, ph);
 }
 function ctl(p) {
   if (!orderable(p)) return '<span class="na">нет в наличии</span>';
@@ -323,7 +326,8 @@ function groupRow(p) {
   </div>`;
 }
 function collRow(c) {
-  const img = c.ph.length ? `<img class="thumb" loading="lazy" alt="" src="${esc(c.ph[0])}">` : `<div class="ph" style="--h:${c.hue}">${c.emoji}</div>`;
+  const ph = `<div class="ph" style="--h:${c.hue}">${c.emoji}</div>`;
+  const img = c.ph.length ? smallImg(c.ph[0], 'thumb', ph) : ph;
   return `<button class="crow" data-go="coll" data-id="${c.id}">
     ${img}
     <div class="pinfo">
