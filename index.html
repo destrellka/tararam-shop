@@ -1,32 +1,30 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" class="th-a">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="format-detection" content="telephone=no">
 <title>ТАРАРАМ — магазин</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=53da7acae1">
-<link rel="icon" href="logo.png?v=53da7acae1">
-<script>/* тёмная тема — до отрисовки, чтобы логотип не мигал */
-(function () { var t = window.Telegram && Telegram.WebApp, d = t && t.platform !== 'unknown' ? t.colorScheme === 'dark'
-  : window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches; if (d) document.documentElement.classList.add('dark'); })();</script>
+<link rel="stylesheet" href="style.css?v=f56bfddda7">
+<link rel="icon" href="logo.png?v=f56bfddda7">
 </head>
 <body>
 <div id="app">
   <header class="top" id="top">
     <div class="brand">
-      <span class="mark"><img src="logo.png?v=53da7acae1" alt=""></span>
+      <span class="mark"><img src="logo.png?v=f56bfddda7" alt=""></span>
       <div><div class="logo">ТАРАРАМ</div><div class="tagline">посуда · упаковка · праздник</div></div>
     </div>
+    <div class="hello" id="hello"><div class="hi" id="hi">Добрый день! 👋</div><h1>Всё для праздника и упаковки</h1></div>
     <label class="search">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Найти товар, например «стакан 250»">
+      <input id="q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Стакан 250, коробка для торта…">
       <button class="clear" id="qclear" type="button" aria-label="Очистить" hidden>✕</button>
     </label>
   </header>
 
-  <main id="view"><div class="loading"><span class="mark big"><img src="logo.png?v=53da7acae1" alt=""></span>Загружаю каталог…</div></main>
+  <main id="view"><div class="loading"><span class="mark big"><img src="logo.png?v=f56bfddda7" alt=""></span>Загружаю каталог…</div></main>
 
   <div class="cta" id="cta" hidden><button id="ctabtn" type="button"></button></div>
 
@@ -44,6 +42,6 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script src="app.js?v=53da7acae1"></script>
+<script src="app.js?v=f56bfddda7"></script>
 </body>
 </html>

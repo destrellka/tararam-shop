@@ -451,6 +451,7 @@ function refreshControls(id) {
   const p0 = S.products[id];
   for (const v of p0 && p0.g ? p0.g.items : [p0]) {
     if (v) document.querySelectorAll(`.prod[data-id="${v.i}"]`).forEach(el => { el.outerHTML = row(v); });
+    if (v) document.querySelectorAll(`.sc[data-id="${v.i}"]`).forEach(el => { el.outerHTML = shelfCard(v.g ? v.g.items[0] : v); });
   }
   if (S.route.v === 'cart') render(true);
   if (S.sheet && S.sheet.id === id) drawSheetDyn();
@@ -483,24 +484,88 @@ function list(items) {
     ${pg < pages - 1 ? `<button type="button" class="btn ghost wide" data-act="page" data-n="${pg + 1}">Следующая страница ›</button>` : ''}`;
 }
 
+const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one
+  : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many);
+function orderSummary(o) {
+  const first = o.items.map(([id]) => S.products[id]).find(Boolean);
+  const more = o.items.length - 1;
+  return first ? `${first.n}${more > 0 ? ` и ещё ${more} ${plural(more, 'товар', 'товара', 'товаров')}` : ''}` : `${o.items.length} поз.`;
+}
+// Сезонный баннер: что скоро нужно покупателям (раздел ищем по названию, нет раздела — нет баннера)
+const SEASONS = [
+  { m: [10, 11, 0], re: /новый год|новогод/i, t: 'Новый год уже скоро', e: ['🎄', '🎁'], c: '#0f5c4a,#1f8a5b' },
+  { m: [1], re: /23 февраля|защитник/i, t: 'Скоро 23 февраля', e: ['🎖️', '🎁'], c: '#1d3c78,#2f62c2' },
+  { m: [1, 2], re: /8 марта|весн/i, t: 'Скоро 8 марта', e: ['💐', '🎀'], c: '#c2185b,#f06292' },
+  { m: [4, 5], re: /выпускн|последний звонок/i, t: 'Выпускные и последний звонок', e: ['🎓', '🎈'], c: '#5b3cc4,#8e6cf0' },
+  { m: [7, 8], re: /1 сентября|школ/i, t: 'Скоро 1 сентября', e: ['📚', '🌼'], c: '#e65100,#ffa726' },
+];
+function seasonBanner() {
+  const month = new Date().getMonth();
+  const all = Object.values(S.folders).filter(f => f.n && !f.coll && f.id !== 'f');
+  for (const s of SEASONS) {
+    if (!s.m.includes(month)) continue;
+    const f = all.find(x => s.re.test(x.name));
+    if (f) return { f, t: s.t, e: s.e, c: s.c };
+  }
+  const f = all.find(x => /праздник/i.test(x.name) && x.parent === 'f');
+  return f ? { f, t: 'Всё для праздника', e: ['🎉', '🎈'], c: '#c2185b,#ff6a3d' } : null;
+}
+function banners() {
+  const out = [];
+  const s = seasonBanner();
+  if (s) {
+    out.push(`<button type="button" class="ban sea" data-go="folder" data-id="${s.f.id}" style="background:linear-gradient(120deg,${s.c})">
+      <h3>${esc(s.t)}</h3><p>${s.f.name === s.t ? '' : esc(s.f.name) + ' · '}${s.f.n} ${plural(s.f.n, 'товар', 'товара', 'товаров')}</p><b>Смотреть →</b>
+      <em>${s.e[0]}</em><em class="e2">${s.e[1]}</em></button>`);
+  }
+  for (const c of Object.values(S.colls)) {
+    if (!c.cnt || !c.ph.length || out.length >= 5) continue;
+    out.push(`<button type="button" class="ban photo" data-go="coll" data-id="${c.id}">
+      <img loading="lazy" alt="" src="${esc(small(c.ph[0]))}" data-big="${esc(c.ph[0])}" onerror="if(this.dataset.big){this.src=this.dataset.big;this.dataset.big=''}else{this.remove()}">
+      <span class="tag">ВЫБОР НА МЕСТЕ</span><div><h3>${esc(c.t)}</h3><p>${kinds(c.cnt)} · ${range(c)}</p></div></button>`);
+  }
+  if (!out.length) return '';
+  return `<div class="bans" id="bans">${out.join('')}</div>${out.length > 1 ? `<div class="dots">${out.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : ''}`;
+}
+// Полки на главной: из каждого раздела — товары с фото и те, которых на складе больше всего
+function shelfItems(fid, n = 10) {
+  return allIn(fid).map(p => [p, (p.ph ? 1e6 : 0) + (leftOf(p) ?? 0)]).sort((a, b) => b[1] - a[1]).slice(0, n).map(x => x[0]);
+}
+function shelves(tops) {
+  return tops.slice(0, 6).map(f => {
+    const items = shelfItems(f.id);
+    if (items.length < 3) return '';
+    return `<div class="sh"><h2><span>${f.emoji ? f.emoji + ' ' : ''}${esc(f.name)}</span><button type="button" data-go="folder" data-id="${f.id}">Все ›</button></h2>
+      <div class="shelf">${items.map(shelfCard).join('')}</div></div>`;
+  }).join('');
+}
+function shelfCard(p) {
+  const vs = variants(p);
+  const from = Math.min(...vs.map(v => v.t[0][1]));
+  const q = vs.reduce((s, v) => s + cartQty(v.i), 0);
+  const btn = !orderable(p) ? '' : multi(p) || !q ? `<button type="button" class="sadd${q ? ' in' : ''}" data-act="${multi(p) ? 'open' : 'inc'}" aria-label="В корзину">${q ? '✓' : '+'}</button>`
+    : `<button type="button" class="sadd in" data-act="open">${q}</button>`;
+  return `<div class="sc" data-id="${p.i}"><div data-act="open">${thumb(p)}</div>
+    <div class="spr" data-act="open">${multi(p) ? 'от ' : ''}${money(from)}</div>${btn}
+    <div class="snm" data-act="open">${esc(multi(p) ? p.g.name : p.n)}</div></div>`;
+}
+
 const VIEWS = {
   home() {
     const tops = S.folders.f.kids.map(id => S.folders[id]).filter(f => f && f.n);
     const shop = S.shop;
+    const last = S.orders[0];
     return `
-    <section class="hero">
-      <h2>Всё для праздника и упаковки</h2>
-      <p>Одноразовая посуда, пакеты, коробки и декор. Чем больше берёте, тем дешевле.</p>
-      <div class="chips"><span>${S.folders.f.n.toLocaleString('ru-RU')} товаров</span><span>опт и розница</span></div>
-      <div class="deco">🎉</div><div class="deco2">🎁</div>
-    </section>
-    <div class="h"><h3>Каталог</h3><span>${tops.length} разделов</span></div>
-    <div class="grid">${tops.map(f => `
-      <button class="tile" style="--h:${f.hue}" data-go="folder" data-id="${f.id}">
-        <div class="em">${f.emoji || '📦'}</div>
-        <div><div class="tt">${esc(f.name)}</div><div class="tc">${f.n} товаров</div></div>
-      </button>`).join('')}
+    ${last && last.items.length ? `<div class="rep">
+      <span class="ri">🔁</span>
+      <div class="rt"><b>Заказ №${esc(last.num)}${last.day ? ' от ' + esc(dayText(last.day)) : ''}</b>${esc(orderSummary(last))}</div>
+      <button type="button" data-act="repeat" data-n="${esc(last.num)}">Повторить</button>
+    </div>` : ''}
+    <div class="icons">${tops.map(f => `
+      <button type="button" class="ic" data-go="folder" data-id="${f.id}"><i style="--h:${f.hue}">${f.emoji || '📦'}</i><span>${esc(f.name)}</span></button>`).join('')}
     </div>
+    ${banners()}
+    ${shelves(tops)}
     <div class="info">
       ${shop.address ? `<div><span>📍</span><span><b>Самовывоз:</b> ${esc(shop.address)}</span></div>` : ''}
       ${shop.hours ? `<div><span>🕘</span><span>${esc(shop.hours).replace(/\n/g, ' · ')}</span></div>` : ''}
@@ -511,13 +576,22 @@ const VIEWS = {
     const f = S.folders[r.id];
     if (!f) return VIEWS.home();
     const path = pathOf(f.id);
+    const top = path[0] || f;
     const kids = f.kids.map(id => S.folders[id]).filter(k => k && k.n && !k.coll);
     const colls = collsIn(f.id);
+    const items = allIn(f.id);
+    const lo = items.length ? Math.min(...items.map(p => Math.min(...variants(p).map(v => v.t[v.t.length - 1][1])))) : 0;
     return `
-    <div class="crumbs"><button data-go="home">Каталог</button>${path.slice(0, -1).map(x => ` › <button data-go="folder" data-id="${x.id}">${esc(x.name)}</button>`).join('')}</div>
-    <div class="vt">${f.emoji ? f.emoji + ' ' : ''}${esc(f.name)}<small>${f.n}</small></div>
-    ${kids.length ? `<div class="kids">${kids.map(k => `<button class="kid" data-go="folder" data-id="${k.id}">${esc(k.name)}<em>${k.n}</em></button>`).join('')}</div>` : ''}
+    <div class="cover" style="--h:${top.hue || 340}">
+      <div class="crumbs"><button data-go="home">‹ Каталог</button>${path.slice(0, -1).map(x => ` › <button data-go="folder" data-id="${x.id}">${esc(x.name)}</button>`).join('')}</div>
+      <h1>${esc(f.name)}</h1>
+      <p>${f.n} ${plural(f.n, 'товар', 'товара', 'товаров')}${lo ? ` · от ${money(lo)}` : ''}</p>
+      <em>${f.emoji || top.emoji || '📦'}</em>
+    </div>
+    ${kids.length ? `<div class="subs">${kids.map(k => `<button type="button" class="sub" data-go="folder" data-id="${k.id}" style="--h:${top.hue || 340}">
+      <b>${esc(k.name)}</b><small>${k.n} ${plural(k.n, 'товар', 'товара', 'товаров')}</small><i>${k.emoji || top.emoji || '📦'}</i></button>`).join('')}</div>` : ''}
     ${colls.length ? `<div class="crows">${colls.map(collRow).join('')}</div>` : ''}
+    ${kids.length && items.length ? `<div class="sec-h">Все товары раздела</div>` : ''}
     <div class="plist" id="plist"></div><div class="pager" id="pager"></div>`;
   },
   coll(r) {
@@ -702,8 +776,27 @@ function render(keepScroll) {
   if (r.v === 'fav' && r.items.length) list(r.items);
   if (r.v === 'checkout') drawCheckoutParts();
   $('#top').hidden = r.v === 'cart' || r.v === 'checkout' || r.v === 'orders';
+  $('#top').classList.toggle('big', r.v === 'home');
+  if (IN_TG && ver('6.1')) try { tg.setHeaderColor(r.v === 'home' ? '#f72b6b' : '#fff8f3'); } catch (e) { /* ничего */ }
+  if (r.v === 'home') dotsFollow();
   window.scrollTo(0, keepScroll ? y : (r.y || 0));
   updateChrome();
+}
+
+// Точки под баннерами показывают, какой баннер сейчас виден
+function dotsFollow() {
+  const box = $('#bans');
+  if (!box) return;
+  box.addEventListener('scroll', () => {
+    const k = Math.round(box.scrollLeft / (box.firstElementChild.offsetWidth + 10));
+    document.querySelectorAll('.dots i').forEach((d, i) => d.classList.toggle('on', i === k));
+  }, { passive: true });
+}
+function greet() {
+  const h = new Date().getHours();
+  const name = IN_TG && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.first_name;
+  const hi = h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
+  $('#hi').textContent = `${hi}${name ? ', ' + name : ''}! 👋`;
 }
 
 function updateChrome(bump) {
@@ -1087,10 +1180,11 @@ async function getJson(url) {
 async function start() {
   if (IN_TG) {
     tg.ready();
-    if (tg.onEvent) tg.onEvent('themeChanged', () => document.documentElement.classList.toggle('dark', tg.colorScheme === 'dark'));
     tg.expand();
     if (ver('6.1')) {
-      try { tg.setHeaderColor('secondary_bg_color'); tg.setBackgroundColor('secondary_bg_color'); } catch (e) { /* ничего */ }
+      // витрина всегда светлая и праздничная, даже если Telegram в тёмной теме
+      try { tg.setHeaderColor('#f72b6b'); tg.setBackgroundColor('#fff8f3'); } catch (e) { /* ничего */ }
+      if (ver('7.10')) try { tg.setBottomBarColor('#ffffff'); } catch (e) { /* ничего */ }
       tg.BackButton.onClick(back);
     }
     if (ver('7.7')) try { tg.disableVerticalSwipes(); } catch (e) { /* ничего */ }
@@ -1103,6 +1197,7 @@ async function start() {
       store.get('cart'), store.get('fav'), store.get('profile'), store.get('req'),
     ]);
     prepare(data, avail);
+    greet();
     S.cart = {};
     let cut = 0;
     for (const [id, q] of Object.entries(parse(cart, {}))) {
