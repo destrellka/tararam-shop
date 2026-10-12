@@ -484,6 +484,20 @@ function list(items) {
     ${pg < pages - 1 ? `<button type="button" class="btn ghost wide" data-act="page" data-n="${pg + 1}">Следующая страница ›</button>` : ''}`;
 }
 
+// Значки интерфейса (линейные, в одном стиле)
+const ICON = {
+  cart: '<circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/>',
+  repeat: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+};
+const icon = (k, cls = 'ico') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICON[k]}</svg>`;
+// Нарисованные значки разделов (icons.png — 10 штук в ряд). Раздел узнаём по названию; нет подходящего — смайлик.
+const ART = [/подарочн\S* пакет/i, /подарочн\S* короб/i, /посуд/i, /пищев/i, /пакет|сумк/i, /бумаг|лент|бант/i,
+  /нов\S* год|новогод/i, /праздн/i, /перчат|хоз|сиз/i, /разн/i];
+const ART_POS = [3, 4, 0, 1, 2, 5, 7, 6, 8, 9];   // где значок в icons.png
+function artIcon(f) {
+  const k = ART.findIndex(re => re.test(f.name));
+  return k < 0 ? `<i style="--h:${f.hue}">${f.emoji || '📦'}</i>` : `<i class="art" style="--n:${ART_POS[k]}"></i>`;
+}
 const plural = (n, one, few, many) => (n % 10 === 1 && n % 100 !== 11 ? one
   : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? few : many);
 function orderSummary(o) {
@@ -557,12 +571,12 @@ const VIEWS = {
     const last = S.orders[0];
     return `
     ${last && last.items.length ? `<div class="rep">
-      <span class="ri">🔁</span>
+      <span class="ri">${icon('repeat')}</span>
       <div class="rt"><b>Заказ №${esc(last.num)}${last.day ? ' от ' + esc(dayText(last.day)) : ''}</b>${esc(orderSummary(last))}</div>
       <button type="button" data-act="repeat" data-n="${esc(last.num)}">Повторить</button>
     </div>` : ''}
     <div class="icons">${tops.map(f => `
-      <button type="button" class="ic" data-go="folder" data-id="${f.id}"><i style="--h:${f.hue}">${f.emoji || '📦'}</i><span>${esc(f.name)}</span></button>`).join('')}
+      <button type="button" class="ic" data-go="folder" data-id="${f.id}">${artIcon(f)}<span>${esc(f.name)}</span></button>`).join('')}
     </div>
     ${banners()}
     ${shelves(tops)}
@@ -660,7 +674,7 @@ const VIEWS = {
         ${extra.length ? `<div class="omore">${extra.join(' · ')}</div>` : ''}
         ${o.cut ? '<div class="omore">Заказ большой, здесь только его часть</div>' : ''}
         <div class="ofoot"><span>${o.total ? money(o.total) : ''}</span>
-          ${o.items.length ? `<button type="button" class="btn small" data-act="repeat" data-n="${esc(o.num)}">🔁 Повторить заказ</button>` : ''}</div>
+          ${o.items.length ? `<button type="button" class="btn small" data-act="repeat" data-n="${esc(o.num)}">${icon('repeat')} Повторить заказ</button>` : ''}</div>
       </div>`;
     }).join('')}
     <p class="note">Повторить: товары из заказа попадут в корзину по сегодняшним ценам, там можно что-то добавить или убрать.</p>`;
@@ -777,7 +791,7 @@ function render(keepScroll) {
   if (r.v === 'checkout') drawCheckoutParts();
   $('#top').hidden = r.v === 'cart' || r.v === 'checkout' || r.v === 'orders';
   $('#top').classList.toggle('big', r.v === 'home');
-  if (IN_TG && ver('6.1')) try { tg.setHeaderColor(r.v === 'home' ? '#f72b6b' : '#fff8f3'); } catch (e) { /* ничего */ }
+  if (IN_TG && ver('6.1')) try { tg.setHeaderColor(r.v === 'home' ? PAL().head : PAL().bg); } catch (e) { /* ничего */ }
   if (r.v === 'home') dotsFollow();
   window.scrollTo(0, keepScroll ? y : (r.y || 0));
   updateChrome();
@@ -820,7 +834,7 @@ function updateChrome(bump) {
     btn.innerHTML = `<span>Оформить заказ</span>${lines.length ? `<span>${money(total)}</span>` : ''}`;
     cta.hidden = !n;
   } else {
-    btn.innerHTML = `<span>🛒 Корзина · ${n} поз.</span>${lines.length ? `<span>${money(total)}</span>` : ''}`;
+    btn.innerHTML = `<span>${icon('cart')} Корзина · ${n} поз.</span>${lines.length ? `<span>${money(total)}</span>` : ''}`;
     cta.hidden = !n;
   }
   if (IN_TG && ver('6.1')) {
@@ -1177,14 +1191,22 @@ async function getJson(url) {
   if (!r.ok) throw new Error(url + ': ' + r.status);
   return r.json();
 }
+// Тема: светлая или тёмная — как в Telegram (вне Telegram — как в телефоне)
+const isDark = () => IN_TG ? tg.colorScheme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+const PAL = () => isDark() ? { head: '#d81b60', bg: '#160f17', bar: '#1d151e' } : { head: '#f72b6b', bg: '#fff8f3', bar: '#ffffff' };
+function applyTheme() {
+  document.documentElement.classList.toggle('th-d', isDark());
+  if (!IN_TG || !ver('6.1')) return;
+  try { tg.setHeaderColor(S.route && S.route.v !== 'home' ? PAL().bg : PAL().head); tg.setBackgroundColor(PAL().bg); } catch (e) { /* ничего */ }
+  if (ver('7.10')) try { tg.setBottomBarColor(PAL().bar); } catch (e) { /* ничего */ }
+}
 async function start() {
   if (IN_TG) {
     tg.ready();
     tg.expand();
     if (ver('6.1')) {
-      // витрина всегда светлая и праздничная, даже если Telegram в тёмной теме
-      try { tg.setHeaderColor('#f72b6b'); tg.setBackgroundColor('#fff8f3'); } catch (e) { /* ничего */ }
-      if (ver('7.10')) try { tg.setBottomBarColor('#ffffff'); } catch (e) { /* ничего */ }
+      applyTheme();
+      if (tg.onEvent) tg.onEvent('themeChanged', () => { applyTheme(); if (S.route) render(true); });
       tg.BackButton.onClick(back);
     }
     if (ver('7.7')) try { tg.disableVerticalSwipes(); } catch (e) { /* ничего */ }

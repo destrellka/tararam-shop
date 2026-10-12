@@ -462,3 +462,41 @@ html.th-a { --bg: #ffffff; --bg2: #fff8f3; --card: #ffffff; --text: #2a1f27; --h
 .sub:active { transform: scale(.97); }
 .sec-h { font-size: 17px; font-weight: 850; margin: 8px 2px 10px; }
 .th-a .top[hidden] + main .cover { margin-top: 0; }
+
+/* ---------- Тёмный вариант «Полок и подборок»: включается сам, когда в Telegram тёмная тема ---------- */
+html.th-a.th-d { --bg: #241c26; --bg2: #160f17; --card: #241c26; --text: #f6ecf2; --hint: #a8939f; --sep: rgba(255, 255, 255, .08);
+  --soft: rgba(247, 43, 107, .20); --cta-bg: #f6ecf2; --cta-fg: #1a131b; --shadow: 0 2px 14px -6px rgba(0, 0, 0, .7);
+  --ok: #3ccf8a; --okbg: rgba(60, 207, 138, .15); color-scheme: dark; }
+.th-d .ph, .th-d .thumb { background: hsl(var(--h, 340) 38% 22%); }
+.th-d img.thumb, .th-d .hero-ph.photo, .th-d .gi { background: #f4eef2; }
+.th-d .tabs { background: #1d151e; box-shadow: 0 -1px 0 var(--sep); }
+.th-d .top.big { background: linear-gradient(135deg, #d81b60, #f0533a 60%, #f29a1f); }
+.th-d .top.big .search { box-shadow: 0 10px 24px -10px rgba(0, 0, 0, .8); }
+.th-d .rep { background: #3a2c14; }
+.th-d .rep .rt { color: #d8c397; }
+.th-d .rep button { background: #ffd23f; color: #2a1f27; }
+.th-d .ic i { background: hsl(var(--h) 42% 25%); box-shadow: inset 0 -3px 0 hsl(var(--h) 45% 17%); }
+.th-d .dots i { background: #43344a; }
+.th-d .dots i.on { background: var(--accent); }
+.th-d .sc, .th-d .sub { background: var(--card); }
+.th-d .sc .snm { color: #c3afba; }
+.th-d .cover { background: linear-gradient(140deg, hsl(var(--h) 65% 40%), hsl(calc(var(--h) + 30) 75% 46%)); }
+.th-d .fav.on { background: #ffd54a2e; }
+
+/* ---------- Линейные значки вместо смайлов ---------- */
+.tabs svg.ti, svg.ico { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.tabs svg.ti { width: 25px; height: 25px; filter: none; opacity: 1; }
+.tabs button.on svg.ti { fill: var(--soft); stroke-width: 2.1; transform: translateY(-1px); }
+.tabs button[data-tab="fav"].on svg.ti { fill: var(--accent); }
+svg.ico { width: 1.15em; height: 1.15em; vertical-align: -.2em; flex: none; }
+.cta button span:first-child { display: inline-flex; align-items: center; gap: 9px; }
+.cta svg.ico { width: 21px; height: 21px; vertical-align: 0; }
+.rep .ri { display: grid; place-items: center; width: 42px; height: 42px; flex: none; border-radius: 13px; background: var(--grad); color: #fff;
+  font-size: 0; box-shadow: 0 6px 14px -8px rgba(247, 43, 107, .9); }
+.rep .ri svg.ico { width: 22px; height: 22px; stroke-width: 2.2; }
+.btn svg.ico { margin-right: 2px; }
+.rep .rt b { overflow: hidden; text-overflow: ellipsis; }
+
+/* Нарисованные значки разделов на главной */
+.ic i.art { background: url(icons.png) calc(var(--n) * -64px) 0 / 640px 64px no-repeat; box-shadow: 0 6px 14px -8px rgba(200, 80, 90, .55); font-size: 0; }
+.th-d .ic i.art { box-shadow: 0 6px 14px -8px rgba(0, 0, 0, .9); }

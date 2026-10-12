@@ -6,14 +6,15 @@
 <meta name="format-detection" content="telephone=no">
 <title>ТАРАРАМ — магазин</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=f56bfddda7">
-<link rel="icon" href="logo.png?v=f56bfddda7">
+<script>try { var W = window.Telegram && Telegram.WebApp; if (W && W.platform && W.platform !== 'unknown' ? W.colorScheme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('th-d'); } catch (e) {}</script>
+<link rel="stylesheet" href="style.css?v=917c94a547">
+<link rel="icon" href="logo.png?v=917c94a547">
 </head>
 <body>
 <div id="app">
   <header class="top" id="top">
     <div class="brand">
-      <span class="mark"><img src="logo.png?v=f56bfddda7" alt=""></span>
+      <span class="mark"><img src="logo.png?v=917c94a547" alt=""></span>
       <div><div class="logo">ТАРАРАМ</div><div class="tagline">посуда · упаковка · праздник</div></div>
     </div>
     <div class="hello" id="hello"><div class="hi" id="hi">Добрый день! 👋</div><h1>Всё для праздника и упаковки</h1></div>
@@ -24,15 +25,15 @@
     </label>
   </header>
 
-  <main id="view"><div class="loading"><span class="mark big"><img src="logo.png?v=f56bfddda7" alt=""></span>Загружаю каталог…</div></main>
+  <main id="view"><div class="loading"><span class="mark big"><img src="logo.png?v=917c94a547" alt=""></span>Загружаю каталог…</div></main>
 
   <div class="cta" id="cta" hidden><button id="ctabtn" type="button"></button></div>
 
   <nav class="tabs" id="tabs">
-    <button data-tab="home" class="on" type="button"><span class="tiw"><span class="ti">🛍️</span></span><span>Каталог</span></button>
-    <button data-tab="fav" type="button"><span class="tiw"><span class="ti">⭐</span></span><span>Избранное</span></button>
-    <button data-tab="orders" type="button"><span class="tiw"><span class="ti">📋</span></span><span>Заказы</span></button>
-    <button data-tab="cart" type="button"><span class="tiw"><span class="ti">🛒</span><b class="badge" id="badge" hidden></b></span><span>Корзина</span></button>
+    <button data-tab="home" class="on" type="button"><span class="tiw"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></span><span>Каталог</span></button>
+    <button data-tab="fav" type="button"><span class="tiw"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.94 5.96 6.56.95-4.75 4.63 1.12 6.54L12 17.5l-5.87 3.08 1.12-6.54L2.5 9.41l6.56-.95z"/></svg></span><span>Избранное</span></button>
+    <button data-tab="orders" type="button"><span class="tiw"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/></svg></span><span>Заказы</span></button>
+    <button data-tab="cart" type="button"><span class="tiw"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="21" r="1"/><circle cx="19" cy="21" r="1"/><path d="M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12"/></svg><b class="badge" id="badge" hidden></b></span><span>Корзина</span></button>
   </nav>
 </div>
 
@@ -42,6 +43,6 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script src="app.js?v=f56bfddda7"></script>
+<script src="app.js?v=917c94a547"></script>
 </body>
 </html>
