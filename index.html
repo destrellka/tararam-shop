@@ -6,8 +6,8 @@
 <meta name="format-detection" content="telephone=no">
 <title>ТАРАРАМ — магазин</title>
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
-<link rel="stylesheet" href="style.css?v=342bb67fdb">
-<link rel="icon" href="logo.png?v=342bb67fdb">
+<link rel="stylesheet" href="style.css?v=2aa1f62152">
+<link rel="icon" href="logo.png?v=2aa1f62152">
 <script>/* тёмная тема — до отрисовки, чтобы логотип не мигал */
 (function () { var t = window.Telegram && Telegram.WebApp, d = t && t.platform !== 'unknown' ? t.colorScheme === 'dark'
   : window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches; if (d) document.documentElement.classList.add('dark'); })();</script>
@@ -16,7 +16,7 @@
 <div id="app">
   <header class="top" id="top">
     <div class="brand">
-      <span class="mark"><img src="logo.png?v=342bb67fdb" alt=""></span>
+      <span class="mark"><img src="logo.png?v=2aa1f62152" alt=""></span>
       <div><div class="logo">ТАРАРАМ</div><div class="tagline">посуда · упаковка · праздник</div></div>
     </div>
     <label class="search">
@@ -26,13 +26,14 @@
     </label>
   </header>
 
-  <main id="view"><div class="loading"><span class="mark big"><img src="logo.png?v=342bb67fdb" alt=""></span>Загружаю каталог…</div></main>
+  <main id="view"><div class="loading"><span class="mark big"><img src="logo.png?v=2aa1f62152" alt=""></span>Загружаю каталог…</div></main>
 
   <div class="cta" id="cta" hidden><button id="ctabtn" type="button"></button></div>
 
   <nav class="tabs" id="tabs">
     <button data-tab="home" class="on" type="button"><span class="tiw"><span class="ti">🛍️</span></span><span>Каталог</span></button>
     <button data-tab="fav" type="button"><span class="tiw"><span class="ti">⭐</span></span><span>Избранное</span></button>
+    <button data-tab="orders" type="button"><span class="tiw"><span class="ti">📋</span></span><span>Заказы</span></button>
     <button data-tab="cart" type="button"><span class="tiw"><span class="ti">🛒</span><b class="badge" id="badge" hidden></b></span><span>Корзина</span></button>
   </nav>
 </div>
@@ -43,6 +44,6 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script src="app.js?v=342bb67fdb"></script>
+<script src="app.js?v=2aa1f62152"></script>
 </body>
 </html>

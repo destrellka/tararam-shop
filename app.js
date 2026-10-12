@@ -8,13 +8,14 @@ const IN_TG = !!(tg && tg.platform && tg.platform !== 'unknown');
 const ver = v => IN_TG && tg.isVersionAtLeast && tg.isVersionAtLeast(v);
 const $ = (s, el = document) => el.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const PAGE = 40;
+const PAGE = 20;   // товаров на одной странице списка
 const MAX_DATA = 4096; // столько байт Telegram пропускает от витрины к боту
 
 const S = {
   shop: {}, delivery: {}, folders: {}, products: {}, order: [], out: new Set(), left: {},
   cart: {}, fav: [], profile: {}, route: { v: 'home' }, stack: [], sheet: null,
   colls: {}, req: {},   // подборки «выбор на месте» и что из них отложить: {id подборки: текст}
+  orders: [],           // последние заказы покупателя (их передаёт бот в адресе витрины)
 };
 
 // ---------- Хранение на телефоне (облако Telegram, если есть, плюс память браузера) ----------
@@ -104,6 +105,74 @@ function search(text) {
   const q = tokens(text);
   if (!q[0].length && !q[1].length) return [];
   return collapse(S.order.filter(p => orderable(p) && matches(q, p)));
+}
+// Опечатки: «бртылка» → «бутылка», «cnfrfy» (английская раскладка) → «стакан»
+let VOCAB = null;
+function vocab() {
+  if (VOCAB) return VOCAB;
+  VOCAB = new Map();
+  for (const p of S.order) {
+    if (!p._ix) p._ix = tokens(p.n);
+    for (const w of p._ix[0]) if (w.length >= 3) VOCAB.set(w, (VOCAB.get(w) || 0) + 1);
+  }
+  return VOCAB;
+}
+function dist(a, b, max) {   // сколько букв поправить (пропуск, лишняя, другая, переставленные соседние)
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let pp = null, prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    let low = i;
+    for (let j = 1; j <= b.length; j++) {
+      let d = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (pp && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d = Math.min(d, pp[j - 2] + 1);
+      cur.push(d);
+      low = Math.min(low, d);
+    }
+    if (low > max) return max + 1;
+    pp = prev; prev = cur;
+  }
+  return prev[b.length];
+}
+function fixWord(w) {
+  const max = w.length >= 7 ? 2 : w.length >= 4 ? 1 : 0;
+  if (!max) return null;
+  let best = null, bd = max + 1, bf = 0;
+  for (const [x, f] of vocab()) {
+    if (x.length < w.length - max) continue;
+    let d = dist(w, x, max);
+    if (x.length > w.length) d = Math.min(d, dist(w, x.slice(0, w.length), max));   // «бутл» — начало слова
+    if (d < bd || (d === bd && f > bf)) { best = x; bd = d; bf = f; }
+  }
+  return bd <= max ? best : null;
+}
+const LAT = "qwertyuiop[]asdfghjkl;'zxcvbnm,.`";
+const CYR = 'йцукенгшщзхъфывапролджэячсмитьбюё';
+const swapLayout = t => t.toLowerCase().replace(/./g, c => (LAT.includes(c) ? CYR[LAT.indexOf(c)] : c));
+// Ничего не нашлось — пробуем исправить запрос. Возвращает {q: исправленный запрос, items} или null
+function fuzzy(text) {
+  const tried = new Set([text.toLowerCase()]);
+  const attempt = t => {
+    if (tried.has(t)) return null;
+    tried.add(t);
+    const items = search(t);
+    return items.length ? { q: t, items } : null;
+  };
+  if (/[a-z]/i.test(text)) {
+    const r = attempt(swapLayout(text));
+    if (r) return r;
+  }
+  for (const base of /[a-z]/i.test(text) ? [swapLayout(text), text.toLowerCase()] : [text.toLowerCase()]) {
+    let fixed = base.replace(/ё/g, 'е');
+    for (const w of tokens(base)[0]) {
+      if (S.order.some(p => matches([[w], []], p))) continue;   // это слово и так находится
+      const x = fixWord(w);
+      if (x) fixed = fixed.replace(w, x);
+    }
+    const r = attempt(fixed);
+    if (r) return r;
+  }
+  return null;
 }
 function searchColls(text) {
   const q = tokens(text.trim());
@@ -281,6 +350,46 @@ function toggleFav(id) {
   return !on;
 }
 
+// Заказы из адреса витрины: «номер.ггммдд.сумма.подборок.код:кол,код:кол~…» (так их передаёт бот)
+function parseOrders(raw) {
+  return String(raw || '').split('~').map(s => {
+    const [num, day, total, nreq, items = ''] = s.split('.');
+    const its = items.split(',').map(x => x.split(':')).filter(([id, q]) => id && +q > 0).map(([id, q]) => [id, +q]);
+    return { num, day, total: +total || 0, nreq: +nreq || 0, items: its, cut: items.endsWith('+') };
+  }).filter(o => /^\d+$/.test(o.num || ''));
+}
+const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+function dayText(d) {
+  if (!/^\d{6}$/.test(d || '')) return '';
+  const y = 2000 + +d.slice(0, 2);
+  return `${+d.slice(4)} ${MONTHS[+d.slice(2, 4) - 1] || ''}${y !== new Date().getFullYear() ? ' ' + y : ''}`;
+}
+// «Повторить заказ»: всё, что есть в наличии, — в корзину (если там уже больше, не уменьшаем)
+function repeatOrder(num) {
+  const o = S.orders.find(x => x.num === num);
+  if (!o) return;
+  let added = 0, gone = 0, cut = 0;
+  for (const [id, q] of o.items) {
+    const p = S.products[id];
+    if (!orderable(p)) { gone++; continue; }
+    let want = Math.max(q, cartQty(id), minQty(p));
+    if (want > maxQty(p)) {
+      if (maxQty(p) < minQty(p)) { gone++; continue; }
+      want = maxQty(p); cut++;
+    }
+    S.cart[id] = want;
+    added++;
+  }
+  if (!added) { haptic('error'); toast('Этих товаров сейчас нет в наличии'); return; }
+  store.set('cart', JSON.stringify(S.cart));
+  haptic('success');
+  go({ v: 'cart' }, false);
+  const parts = [`✅ В корзине: ${added} поз. из заказа №${num}`];
+  if (gone) parts.push(`${gone} сейчас нет в наличии`);
+  if (cut) parts.push(`${cut} — сколько есть на складе`);
+  toast(parts.join('. '), gone || cut ? 4500 : 2600);
+}
+
 // ---------- Отрисовка ----------
 // Маленькая копия фото для списков (photos/s/…); если её нет — большое фото, если и его нет — значок
 const small = src => src.replace(/^photos\//, 'photos/s/');
@@ -347,25 +456,31 @@ function refreshControls(id) {
   if (S.sheet && S.sheet.id === id) drawSheetDyn();
 }
 
-let observer = null;
-function list(items, keep = 0) {
-  if (observer) observer.disconnect();
+// Список товаров по страницам: внизу кнопки «‹ 1 2 3 … ›»
+function list(items) {
   const box = $('#plist');
   if (!box) return;
-  let shown = 0;
-  const more = n => {
-    const chunk = items.slice(shown, shown + n);
-    shown += chunk.length;
-    S.route.shown = shown;
-    box.insertAdjacentHTML('beforeend', chunk.map(row).join(''));
-    const tail = $('#more');
-    if (tail) tail.hidden = shown >= items.length;
-  };
-  box.innerHTML = '';
-  more(Math.max(PAGE, keep));
-  observer = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) more(PAGE); }, { rootMargin: '600px' });
-  const tail = $('#more');
-  if (tail) observer.observe(tail);
+  const pages = Math.max(1, Math.ceil(items.length / PAGE));
+  const pg = Math.min(Math.max(0, S.route.pg || 0), pages - 1);
+  S.route.pg = pg;
+  box.innerHTML = items.slice(pg * PAGE, (pg + 1) * PAGE).map(row).join('');
+  const pager = $('#pager');
+  if (!pager) return;
+  if (pages < 2) { pager.innerHTML = ''; return; }
+  const near = [...new Set([0, pg - 1, pg, pg + 1, pages - 1])].filter(n => n >= 0 && n < pages).sort((a, b) => a - b);
+  const nums = [];
+  near.forEach((n, k) => {
+    if (k && n - near[k - 1] > 1) nums.push('<span class="gap">…</span>');
+    nums.push(`<button type="button" class="${n === pg ? 'on' : ''}" data-act="page" data-n="${n}">${n + 1}</button>`);
+  });
+  pager.innerHTML = `
+    <div class="pg">
+      <button type="button" class="arr" data-act="page" data-n="${pg - 1}" ${pg ? '' : 'disabled'} aria-label="Предыдущая страница">‹</button>
+      ${nums.join('')}
+      <button type="button" class="arr" data-act="page" data-n="${pg + 1}" ${pg < pages - 1 ? '' : 'disabled'} aria-label="Следующая страница">›</button>
+    </div>
+    <div class="pgi">${pg * PAGE + 1}–${Math.min(items.length, (pg + 1) * PAGE)} из ${items.length}</div>
+    ${pg < pages - 1 ? `<button type="button" class="btn ghost wide" data-act="page" data-n="${pg + 1}">Следующая страница ›</button>` : ''}`;
 }
 
 const VIEWS = {
@@ -403,7 +518,7 @@ const VIEWS = {
     <div class="vt">${f.emoji ? f.emoji + ' ' : ''}${esc(f.name)}<small>${f.n}</small></div>
     ${kids.length ? `<div class="kids">${kids.map(k => `<button class="kid" data-go="folder" data-id="${k.id}">${esc(k.name)}<em>${k.n}</em></button>`).join('')}</div>` : ''}
     ${colls.length ? `<div class="crows">${colls.map(collRow).join('')}</div>` : ''}
-    <div class="plist" id="plist"></div><div class="more" id="more">Загружаю ещё…</div>`;
+    <div class="plist" id="plist"></div><div class="pager" id="pager"></div>`;
   },
   coll(r) {
     const c = S.colls[r.id];
@@ -431,20 +546,50 @@ const VIEWS = {
   },
   search(r) {
     r.items = search(r.q);
-    const colls = searchColls(r.q);
+    let colls = searchColls(r.q);
+    let fixed = '';
+    if (!r.items.length && !colls.length) {
+      const fz = fuzzy(r.q);
+      if (fz) { r.items = fz.items; fixed = fz.q; colls = searchColls(fz.q); }
+    }
     const top = colls.length ? `<div class="crows">${colls.map(collRow).join('')}</div>` : '';
-    if (!r.items.length && colls.length) return `<div class="vt">Поиск</div>${top}`;
+    const note = fixed ? `<div class="fixed">По запросу «${esc(r.q)}» ничего нет. Показываю, что нашлось по запросу «<b>${esc(fixed)}</b>»</div>` : '';
+    if (!r.items.length && colls.length) return `<div class="vt">Поиск</div>${note}${top}`;
     if (!r.items.length) {
       return `<div class="empty"><div class="big">🔍</div><b>Ничего не нашлось</b>По запросу «${esc(r.q)}» товаров нет. Попробуйте другое слово, например «контейнер» или «пакет».</div>`;
     }
-    return `<div class="vt">Поиск<small>${r.items.length}</small></div>${top}<div class="plist" id="plist"></div><div class="more" id="more">Загружаю ещё…</div>`;
+    return `<div class="vt">Поиск<small>${r.items.length}</small></div>${note}${top}<div class="plist" id="plist"></div><div class="pager" id="pager"></div>`;
   },
   fav(r) {
     r.items = S.fav.map(id => S.products[id]).filter(Boolean);
     if (!r.items.length) {
       return `<div class="empty"><div class="big">⭐</div><b>В избранном пусто</b>Откройте товар и нажмите ☆, чтобы быстро находить его потом.<br><button class="btn ghost" data-go="home">Перейти в каталог</button></div>`;
     }
-    return `<div class="vt">Избранное<small>${r.items.length}</small></div><div class="plist" id="plist"></div><div class="more" id="more"></div>`;
+    return `<div class="vt">Избранное<small>${r.items.length}</small></div><div class="plist" id="plist"></div><div class="pager" id="pager"></div>`;
+  },
+  orders() {
+    if (!S.orders.length) {
+      return `<div class="empty"><div class="big">📋</div><b>Заказов пока нет</b>Здесь появятся ваши заказы из магазина и из бота. Любой из них можно будет повторить одной кнопкой.<br><button class="btn ghost" data-go="home">Перейти в каталог</button></div>`;
+    }
+    return `<div class="vt">Мои заказы</div>
+    ${S.orders.map(o => {
+      const ps = o.items.map(([id, q]) => [S.products[id], q]);
+      const shown = ps.slice(0, 4).map(([p, q]) => (p
+        ? `<li><span>${esc(p.n)}</span><b>${q} ${un(p)}</b></li>`
+        : `<li class="gone"><span>Товар больше не продаётся</span><b>${q} шт</b></li>`)).join('');
+      const extra = [];
+      if (ps.length > 4) extra.push(`и ещё ${ps.length - 4} поз.`);
+      if (o.nreq) extra.push(`выбор на месте: ${o.nreq}`);
+      return `<div class="card order">
+        <div class="oh"><b>Заказ №${esc(o.num)}</b><span>${esc(dayText(o.day))}</span></div>
+        ${shown ? `<ul>${shown}</ul>` : ''}
+        ${extra.length ? `<div class="omore">${extra.join(' · ')}</div>` : ''}
+        ${o.cut ? '<div class="omore">Заказ большой, здесь только его часть</div>' : ''}
+        <div class="ofoot"><span>${o.total ? money(o.total) : ''}</span>
+          ${o.items.length ? `<button type="button" class="btn small" data-act="repeat" data-n="${esc(o.num)}">🔁 Повторить заказ</button>` : ''}</div>
+      </div>`;
+    }).join('')}
+    <p class="note">Повторить: товары из заказа попадут в корзину по сегодняшним ценам, там можно что-то добавить или убрать.</p>`;
   },
   cart() {
     const { lines, total } = cartLines();
@@ -552,11 +697,11 @@ function render(keepScroll) {
   const r = S.route;
   const y = window.scrollY;
   $('#view').innerHTML = VIEWS[r.v](r);
-  if (r.v === 'folder') list(allIn(r.id), r.shown);
-  if (r.v === 'search' && r.items.length) list(r.items, r.shown);
-  if (r.v === 'fav' && r.items.length) list(r.items, r.items.length);
+  if (r.v === 'folder') list(allIn(r.id));
+  if (r.v === 'search' && r.items.length) list(r.items);
+  if (r.v === 'fav' && r.items.length) list(r.items);
   if (r.v === 'checkout') drawCheckoutParts();
-  $('#top').hidden = r.v === 'cart' || r.v === 'checkout';
+  $('#top').hidden = r.v === 'cart' || r.v === 'checkout' || r.v === 'orders';
   window.scrollTo(0, keepScroll ? y : (r.y || 0));
   updateChrome();
 }
@@ -568,7 +713,7 @@ function updateChrome(bump) {
   badge.hidden = !n;
   badge.textContent = n;
   if (bump) { badge.classList.remove('bump'); void badge.offsetWidth; badge.classList.add('bump'); }
-  const tab = { home: 'home', folder: 'home', coll: 'home', search: 'home', fav: 'fav', cart: 'cart', checkout: 'cart' }[S.route.v];
+  const tab = { home: 'home', folder: 'home', coll: 'home', search: 'home', fav: 'fav', orders: 'orders', cart: 'cart', checkout: 'cart' }[S.route.v];
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
 
   const cta = $('#cta'), btn = $('#ctabtn');
@@ -748,7 +893,14 @@ function submit() {
   store.set('profile', JSON.stringify(S.profile));
   if (!IN_TG) { toast('Заказ отправляется только из Telegram: откройте магазин кнопкой в боте'); return; }
   if (tg.initDataUnsafe && tg.initDataUnsafe.query_id) {
-    // Открыто кнопкой из сообщения: такие окна не могут прислать заказ боту. Корзина уже сохранена в Telegram.
+    // Открыто не кнопкой под полем ввода (кнопкой «Магазин» слева, из списка чатов или из сообщения):
+    // такие окна не могут прислать заказ боту. Корзина уже сохранена — отправляем покупателя в чат с ботом,
+    // бот даст кнопку «🛒 Оформить заказ», и витрина откроется сразу на оформлении.
+    if (S.shop.bot && ver('6.1')) {
+      tg.openTelegramLink(`https://t.me/${S.shop.bot}?start=checkout`);
+      setTimeout(() => tg.close(), 400);
+      return;
+    }
     tg.showAlert('Корзина сохранена ✅\n\nЧтобы отправить заказ, нажмите «🛍 Открыть магазин» в меню под полем ввода сообщения. Корзина будет там же.', () => tg.close());
     return;
   }
@@ -773,12 +925,12 @@ function askContact() {
 
 // ---------- Мелочи ----------
 let toastTimer = null;
-function toast(text) {
+function toast(text, ms = 2200) {
   const el = $('#toast');
   el.textContent = text;
   el.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.hidden = true; }, 2200);
+  toastTimer = setTimeout(() => { el.hidden = true; }, ms);
 }
 function haptic(kind) {
   if (!ver('6.1')) return;
@@ -863,6 +1015,8 @@ document.addEventListener('click', e => {
       updateChrome();
       break;
     case 'contact': askContact(); break;
+    case 'page': S.route.pg = Number(el.dataset.n); S.route.y = 0; haptic('select'); render(); break;
+    case 'repeat': repeatOrder(el.dataset.n); break;
     case 'tglink':
       if (IN_TG && ver('6.1')) { e.preventDefault(); tg.openTelegramLink(el.href); }
       break;
@@ -922,9 +1076,16 @@ async function start() {
     if (cut) { store.set('cart', JSON.stringify(S.cart)); setTimeout(() => toast('Часть товаров закончилась на складе — количество в корзине уменьшено'), 400); }
     S.fav = parse(fav, []).filter(id => S.products[id]);
     syncBotFav(await store.get('favbot'));
+    const params = new URLSearchParams(location.search);
+    if (params.get('ord') != null) store.set('orders', params.get('ord'));   // для открытия кнопкой без адреса
+    S.orders = parseOrders(params.get('ord') ?? await store.get('orders'));
     S.req = {};
     for (const [id, t] of Object.entries(parse(req, {}))) if (S.colls[id] && t) S.req[id] = String(t).slice(0, 300);
     S.profile = parse(profile, {});
+    if (params.get('go') === 'checkout' && (Object.keys(S.cart).length || reqLines().length)) {
+      S.stack = [{ v: 'home' }, { v: 'cart' }];   // открыли кнопкой «🛒 Оформить заказ» — сразу на оформление
+      S.route = { v: 'checkout' };
+    }
     render();
   } catch (e) {
     $('#view').innerHTML = `<div class="empty"><div class="big">😔</div><b>Не получилось загрузить каталог</b>Проверьте интернет и откройте магазин ещё раз.<br><button class="btn" onclick="location.reload()">Обновить</button></div>`;

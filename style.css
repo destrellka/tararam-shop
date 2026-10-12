@@ -12,6 +12,7 @@
   --accent2: #ff7a2f;
   --grad: linear-gradient(120deg, #f72b6b 0%, #ff5a4e 55%, #ff8a2b 100%);
   --soft: rgba(247, 43, 107, .12);
+  --cta-bg: #24232b; --cta-fg: #fff; --cta-pill: var(--accent);   /* кнопка корзины: спокойная, однотонная */
   --ok: #17a864;
   --okbg: rgba(23, 168, 100, .13);
   --r: 18px;
@@ -258,15 +259,19 @@ img.thumb { object-fit: contain; background: #fff; }
 /* ---------- Кнопка внизу и вкладки ---------- */
 .cta { position: fixed; left: 0; right: 0; bottom: calc(var(--tabs-h) + var(--safe-b)); z-index: 30; padding: 8px 16px 10px; pointer-events: none; }
 .cta button {
-  pointer-events: auto; width: 100%; height: 54px; border-radius: 17px; background: var(--grad); color: #fff;
-  font-weight: 750; font-size: 16px; display: flex; align-items: center; justify-content: space-between; padding: 0 18px;
-  box-shadow: 0 12px 26px -10px rgba(247, 43, 107, .75); animation: pop .25s ease;
+  pointer-events: auto; width: 100%; height: 52px; border-radius: 16px; background: var(--cta-bg); color: var(--cta-fg);
+  font-weight: 700; font-size: 16px; display: flex; align-items: center; justify-content: space-between; padding: 0 8px 0 18px;
+  box-shadow: 0 8px 22px -10px rgba(0, 0, 0, .45); animation: pop .25s ease;
 }
-.cta button span:last-child:not(:only-child) { background: rgba(255, 255, 255, .22); padding: 5px 10px; border-radius: 10px; font-size: 15px; }
+.cta button span:last-child:not(:only-child) { background: var(--cta-pill); color: #fff; padding: 7px 12px; border-radius: 11px; font-size: 15px; }
+.dark { --cta-bg: #f2f1f6; --cta-fg: #17161c; }
+/* другие варианты цвета (класс на <html>): оранжевая и розовая */
+.cta-orange { --cta-bg: #ff6a2b; --cta-fg: #fff; --cta-pill: rgba(255, 255, 255, .22); }
+.cta-pink { --cta-bg: #f72b6b; --cta-fg: #fff; --cta-pill: rgba(255, 255, 255, .22); }
 .cta button.center { justify-content: center; gap: 10px; }
 @keyframes pop { from { transform: translateY(20px); opacity: 0; } }
 .tabs {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 31; display: grid; grid-template-columns: repeat(3, 1fr);
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 31; display: grid; grid-template-columns: repeat(4, 1fr);
   height: calc(var(--tabs-h) + var(--safe-b)); padding-bottom: var(--safe-b);
   background: var(--bg); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border-top: 1px solid var(--sep);
@@ -339,3 +344,29 @@ img.thumb { object-fit: contain; background: #fff; }
 .rq .rt { font-size: 14px; margin-top: 4px; white-space: pre-line; }
 .rq .row { display: flex; align-items: center; gap: 14px; margin-top: 4px; }
 .rq .row small { margin-left: auto; color: var(--hint); font-size: 12px; }
+
+/* Страницы списка */
+.pager { margin: 6px 0 4px; }
+.pg { display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pg button { min-width: 38px; height: 38px; padding: 0 8px; border-radius: 12px; background: var(--card); font-weight: 700; font-size: 15px; }
+.pg button.on { background: var(--accent); color: #fff; }
+.pg button.arr { font-size: 22px; color: var(--accent); }
+.pg button:disabled { opacity: .35; cursor: default; }
+.pg .gap { color: var(--hint); padding: 0 2px; }
+.pgi { text-align: center; color: var(--hint); font-size: 13px; margin: 8px 0 0; }
+.btn.wide { display: flex; width: 100%; margin-top: 10px; }
+.btn.small { height: 38px; padding: 0 14px; font-size: 14px; margin: 0; border-radius: 12px; }
+
+/* Исправленный запрос */
+.fixed { background: var(--soft); border-radius: 14px; padding: 10px 14px; margin: 0 0 12px; font-size: 14px; }
+
+/* Мои заказы */
+.order { margin-bottom: 12px; }
+.order .oh { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.order .oh span { color: var(--hint); font-size: 13.5px; }
+.order ul { list-style: none; margin: 10px 0 0; padding: 0; }
+.order li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: 14px; border-top: 1px solid var(--sep); }
+.order li b { white-space: nowrap; font-weight: 600; color: var(--hint); }
+.order li.gone span { color: var(--hint); font-style: italic; }
+.order .omore { color: var(--hint); font-size: 13px; margin-top: 6px; }
+.order .ofoot { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-weight: 800; font-size: 16px; }
